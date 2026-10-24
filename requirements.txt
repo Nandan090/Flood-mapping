@@ -1,0 +1,25 @@
+earthengine-api
+geemap
+geedim
+numpy
+pandas
+scipy
+xarray
+rioxarray
+rasterio
+geopandas
+shapely
+pyproj
+rasterstats
+scikit-image
+statsmodels
+patsy
+lifelines
+matplotlib
+jinja2
+pyyaml
+tqdm
+osmnx
+pytest
+# optional: only for the NASA HMA 8 m DEM
+# earthaccess

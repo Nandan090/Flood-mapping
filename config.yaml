@@ -1,0 +1,304 @@
+# All analytical settings live here. Modules must not hardcode dates,
+# thresholds, paths or coordinates (spec rule 0.6).
+
+seed: 42
+
+# Google Earth Engine project ID. The user supplies this before any fetch.
+ee_project: "youtube-video-generator-499617"
+
+# Asset IDs from spec section 4. Every one is checked at runtime; a failure
+# stops the run. Hansen's exact version is looked up under hansen_parent.
+assets:
+  s1: COPERNICUS/S1_GRD
+  s2: COPERNICUS/S2_SR_HARMONIZED
+  cloud_score: GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED
+  fabdem: projects/sat-io/open-datasets/FABDEM
+  copernicus_dem: COPERNICUS/DEM/GLO30_2024_1
+  dynamic_world: GOOGLE/DYNAMICWORLD/V1
+  canopy_height: users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1
+  hansen_parent: UMD/hansen
+  merit: MERIT/Hydro/v1_0_1
+  worldcover:
+    - { id: ESA/WorldCover/v100, year: 2020 }
+    - { id: ESA/WorldCover/v200, year: 2021 }
+  bands:
+    s2: [B2, B3, B4, B8, B11]
+    cloud_score: cs_cdf
+    dynamic_world: trees
+    fabdem: b1
+    copernicus_dem: DEM
+    canopy_height: b1
+    hansen: lossyear
+    merit: upa
+    worldcover: Map
+  s1_mode: IW
+  s1_polarisations: [VV, VH]
+
+# Sentinel-2 L2A reflectance is stored as digital numbers. 0.0001 converts to 0–1.
+s2_reflectance_scale: 0.0001
+
+crs: EPSG:32645 # UTM 45N; all distances in metres
+grid_m: 10 # analysis grid, snapped to the Sentinel-2 grid
+corridor_buffer_m: 2000 # centerline buffered to make the corridor
+
+paths:
+  data: data
+  outputs: outputs
+
+# ---------------------------------------------------------------------------
+# Geometry (sections 6 and 7)
+# ---------------------------------------------------------------------------
+station_spacing_m: 100
+station_spacing_sensitivity_m: 50
+max_half_length_m: 1500
+normal_baseline_m: 250 # direction: this far up and downstream on the verified line (14.21)
+neighbour_search_m: 1000 # same-bank transects considered for usable length (14.21)
+neighbour_min_usable_m: 100 # intersects_neighbour only when usable length is under this (14.21)
+smooth_window_m: 200
+confluence_distance_m: 300
+confluence_upa_fraction: 0.05
+valid_fraction_min: 0.7
+
+# ---------------------------------------------------------------------------
+# Impact label (section 5)
+# ---------------------------------------------------------------------------
+cloud_score_min: 0.60 # Cloud Score+ cs_cdf
+clear_obs_min: 2 # pixels with fewer clear observations are nodata
+ndvi_channel_max: 0.20 # NDVI_pre below this counts as active channel
+mndwi_channel_min: 0.0
+channel_seed_max_m: 30 # spectral channel components must come this close to the centerline (14.18)
+channel_merge_gap_m: 20 # transect centring: channel runs this close are merged (14.18)
+recentre_max_m: 100 # transect centring: furthest channel edge that can be chosen (14.18)
+ndvi_unknown_max: 0.30 # already bare/built before the event -> nodata
+ndvi_deposit_max: 0.30
+bsi_percentile: 5 # t_bsi = this percentile of BSI_post in the channel
+sar_scenes_min: 3 # orbits with fewer scenes are skipped
+sar_focal_median_px: 3 # 3x3 focal median on each scene, in dB
+layover_shadow_buffer_m: 30 # extra buffer around layover/shadow (14.19 d)
+dark_b8_threshold: 0.08 # B8 below this in the pre or post composite: optical nodata outside the channel (14.19 a)
+radar_only_slope_classes_deg: [15, 30] # reporting classes for radar-only impact (14.19 f)
+sar_z_threshold: 3.0
+sar_agreement_fraction: 0.5 # at least half of valid orbits (14.12)
+label_threshold_sensitivity: 0.20 # t_bsi and SAR z varied by +/-20% (8.8)
+morph_close_radius_px: 1
+impact_gap_m: 20 # non-impact gaps the run continues across
+near_bank_impact_m: 30 # a first valid sample this close to the bank top that is impacted starts the run (14.24)
+near_bank_zero_m: 20 # impact this close starts the run; otherwise a valid non-impacted sample this close gives reach 0 (14.24)
+nodata_gap_m: 30 # longer nodata gaps end the run and censor it
+overtop_m: 20
+wall_slope_deg: 30
+wall_run_m: 50
+river_visible_window_m: 30 # a zero needs a visible river within this distance of the station (14.20)
+river_visible_ndvi_max: 0.30 # ... a sample with NDVI_post below this, or impacted
+
+# ---------------------------------------------------------------------------
+# Exposure (section 7.3, clarifications 14.3 and 14.14)
+# ---------------------------------------------------------------------------
+belt_width_m: 100
+belt_widths_m: [50, 100, 200]
+trees_probability_min: 0.5
+canopy_height_min_m: 5
+hansen_loss_from_year: 2021 # condition is loss year in [this, pre-composite year]
+worldcover_forest_class: 10
+
+# ---------------------------------------------------------------------------
+# Radar reference zone (14.11)
+# ---------------------------------------------------------------------------
+reference_height_above_channel_m: 150
+reference_slope_max_deg: 35
+reference_pixels_min: 5000
+
+# ---------------------------------------------------------------------------
+# Statistics (section 8, clarifications 14.5 to 14.10, 14.15, 14.16)
+# ---------------------------------------------------------------------------
+# Primary interval (14.15): wild cluster bootstrap-t with the null imposed,
+# clustered on blocks of bootstrap_block_km along the river.
+bootstrap_block_km: 3
+bootstrap_final_block_min_km: 1.5 # a shorter final block merges into the previous one
+min_blocks: 8 # fewer blocks: verdict at most "inconclusive"
+wild_bootstrap_draws: 1999
+ci_bisection_tolerance_se: 0.01 # interval search tolerance, as a share of SE_cluster
+# Sensitivity interval (8.4): 1 km pairs block bootstrap, percentile interval.
+# Reported beside the primary interval, labelled as known to be too narrow.
+bootstrap_reps: 2000
+# River sections (14.16 rule 4): candidate confluences where MERIT upa rises
+# by more than this share within this distance. The user confirms them.
+section_break_upa_rise: 0.5
+section_break_window_m: 300
+spline_df: 5
+forest_high_threshold: 0.5
+forest_high_min_share: 0.15 # below this, split at the median of F instead (14.8)
+overlap_min_row_fraction: 0.30
+overlap_min_segments: 15
+model_b_min_stations: 30
+model_b_min_forest_diff: 0.2
+winsorise_percentile: 97.5 # sensitivity: reach height and distance capped here (14.19 f)
+narrow_effect_sd: 0.25 # "reasonably narrow" for continuous outcomes (14.10)
+narrow_or_low: 0.67
+narrow_or_high: 1.50
+overtop_prevalence_for_rr: 0.15
+reach_end_shift_km: 5 # sensitivity: move the reach end both ways (14.5)
+terraces_bank_slope_max_deg: 15
+reach_height_unc_max_m: 10
+gradient_window_m: 500
+curvature_window_m: 300
+upa_window_m: 300
+
+# ---------------------------------------------------------------------------
+# Validation (section 9, clarification 14.13)
+# ---------------------------------------------------------------------------
+# A station is eligible when at least one bank is in the analysis set. Its
+# forest fraction is the mean of forest_frac_{belt_width_m} on those banks.
+# Equal-count groups, lowest fraction first. When the sample size does not
+# divide evenly, the extra stations come from the lower groups. The written
+# files leave out forest and outcome fields.
+validation_sample_size: 40
+validation_terciles: 3
+validation_snap_max_m: 20 # a digitised point further than this from its transect is refused (14.25)
+validation_channel_offset_warn_m: 100 # report sampled stations whose re-centred channel is this far from the station (14.25)
+validation_recall_gap: 0.10 # flag if forest recall is lower by more than this
+vantor_nodata: 0
+vantor_cloud_probability_max: 30
+
+# ---------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------
+# Window boundaries are enforced on scene timestamps, not dates (14.1):
+#   pre scenes  : acquired before 00:00 UTC on the event date
+#   post scenes : acquired later than event_time_utc + 12 h
+#   unknown hour: post starts 00:00 UTC on the day after
+#
+# Reaches (14.16): the analysed reach is reach_start_km to reach_end_km along
+# the user-verified centerline. Stations beyond the end are kept but flagged
+# outside the reach. section_breaks_km: null means not yet confirmed by the
+# user; [] means confirmed that there are none. Landmark coordinates are WGS84
+# lon/lat, filled in by the user; the code prints each one's river_km once the
+# centerline is verified.
+events:
+  melamchi2021:
+    name: Melamchi landslide-dam flood
+    event_dates: ["2021-06-15", "2021-07-31"]
+    event_time_utc: null # two surges; hour not used
+    pre_end_utc: "2021-06-15T00:00:00Z"
+    post_start_utc: "2021-08-03T00:00:00Z"
+    centerline_file: data/melamchi2021/centerline.geojson
+    # Search box for the OSM draft, WGS84 (left, bottom, right, top).
+    osm_bbox: [85.40, 27.70, 85.75, 28.20]
+    osm_snap_m: 150
+    # Verified line. The slope-based draft start fell inside the 2021 debris
+    # deposit; the user moved the start downstream and corrected the vertices.
+    # The fields below the coordinates are only used if the OSM draft is rebuilt.
+    start_point:
+      name: user-corrected, downstream of the 2021 debris deposit
+      lon: 85.5359967
+      lat: 28.0533312
+      downstream_of_flat_m: 500
+      flat_max_slope: 0.08
+      flat_slope_window_m: 500
+      flat_min_length_m: 1500
+      flat_min_elevation_m: 3000
+      sample_m: 100
+    reach_start_km: 0
+    reach_end_km: 35.5486 # length of the verified line, 35548.6 m from its first vertex
+    rivers: [Melamchi River, Indrawati]
+    section_breaks_km: [31.221] # Melamchi-Indrawati confluence, Melamchi Bazaar
+    landmarks:
+      - { name: Melamchi Bazaar, lon: 85.5779207, lat: 27.8322770 }
+      - { name: Melamchi-Indrawati confluence, lon: 85.5779207, lat: 27.8322770 }
+    exclude_dates: [] # post-window dates to drop if a later flood contaminated them
+    # Report only (14.23 a): Dynamic World has no image of this tile in the
+    # S2 pre window. The window is not widened.
+    dynamic_world_gap_check: { tile: T45RUM, start: "2020-09-01", end: "2021-03-31" }
+    s2_pre: { start: "2020-10-01", end: "2020-12-15" }
+    s2_post: { start: "2021-10-01", end: "2021-12-15" }
+    # Primary baseline: the post window one year earlier (14.17). The end
+    # timestamp is exclusive, matching s1_post.
+    s1_pre: { start: "2020-08-03T00:00:00Z", end: "2020-09-15T00:00:00Z" }
+    s1_post: { start: "2021-08-03T00:00:00Z", end: "2021-09-15T00:00:00Z" }
+    # Sensitivity only. Through 14 June 2021; never the primary baseline.
+    sar_near: { start: "2021-04-01T00:00:00Z", end: "2021-06-15T00:00:00Z" }
+    known_floods_between: [] # user lists floods between the baseline and the event
+    # Hillslope failures and tributary fans (14.19 e). Side looking downstream:
+    # west bank = right, east bank = left. Revised list from the spec, checked
+    # by the user against the hatched sheets before any outcome table existed.
+    manual_exclusions:
+      - { from_km: 3.7, to_km: 4.7, side: right, reason: hillslope_failure }
+      - { from_km: 10.1, to_km: 10.55, side: left, reason: tributary_fan }
+      - { from_km: 13.6, to_km: 13.85, side: left, reason: tributary_fan }
+      - { from_km: 19.7, to_km: 20.0, side: right, reason: tributary_fan }
+      - { from_km: 22.8, to_km: 23.3, side: left, reason: tributary_fan }
+    manual_exclusions_confirmed_on: "2026-10-08"
+    placebo:
+      s2_pre: { start: "2018-10-01", end: "2018-12-15" }
+      s2_post: { start: "2019-10-01", end: "2019-12-15" }
+      fake_event_date: "2019-06-15"
+      s1_pre: { start: "2018-08-03T00:00:00Z", end: "2018-09-15T00:00:00Z" }
+      s1_post: { start: "2019-08-03T00:00:00Z", end: "2019-09-15T00:00:00Z" }
+
+  lende2025:
+    name: Lende Khola lake-outburst flood
+    event_dates: ["2025-07-08"]
+    event_time_utc: null # hour unknown
+    pre_end_utc: "2025-07-08T00:00:00Z"
+    post_start_utc: "2025-07-09T00:00:00Z"
+    # Shared with bhotekoshi2026: same file, same river_km = 0 (14.16 rule 2).
+    centerline_file: data/rasuwagadhi_trishuli/centerline.geojson
+    start_point: { name: Rasuwagadhi border crossing, lon: null, lat: null }
+    reach_start_km: 0
+    reach_end_km: 35 # from the draft paper, until the user replaces it
+    rivers: [Bhotekoshi, Trishuli]
+    section_breaks_km: null # user confirms confluences inside the reach
+    landmarks:
+      - { name: Rasuwagadhi, lon: null, lat: null }
+      - { name: Syaphrubesi, lon: null, lat: null }
+    exclude_dates: []
+    s2_pre: { start: "2024-10-01", end: "2024-12-15" }
+    s2_post: { start: "2025-10-01", end: "2025-12-15" }
+    s1_pre: { start: "2024-07-09T00:00:00Z", end: "2024-08-15T00:00:00Z" }
+    s1_post: { start: "2025-07-09T00:00:00Z", end: "2025-08-15T00:00:00Z" }
+    sar_near: { start: "2025-05-01T00:00:00Z", end: "2025-07-08T00:00:00Z" }
+    known_floods_between: []
+    manual_exclusions: [] # filled from this event's post-event sheets (14.19 e)
+    manual_exclusions_confirmed_on: null
+    placebo:
+      s2_pre: { start: "2022-10-01", end: "2022-12-15" }
+      s2_post: { start: "2023-10-01", end: "2023-12-15" }
+      fake_event_date: "2023-07-08"
+      s1_pre: { start: "2022-07-09T00:00:00Z", end: "2022-08-15T00:00:00Z" }
+      s1_post: { start: "2023-07-09T00:00:00Z", end: "2023-08-15T00:00:00Z" }
+
+  bhotekoshi2026:
+    name: Ice-rock avalanche debris flood
+    event_dates: ["2026-08-26"]
+    event_time_utc: "2026-08-26T02:52:00Z"
+    pre_end_utc: "2026-08-26T00:00:00Z"
+    post_start_utc: "2026-08-26T14:52:00Z" # event time + 12 h
+    centerline_file: data/rasuwagadhi_trishuli/centerline.geojson
+    start_point: { name: Rasuwagadhi border crossing, lon: null, lat: null }
+    reach_start_km: 0
+    reach_end_km: 72 # or Bidur, if the user confirms Bidur is nearer
+    rivers: [Bhotekoshi, Trishuli]
+    section_breaks_km: null # user confirms confluences inside the reach
+    landmarks:
+      - { name: Rasuwagadhi, lon: null, lat: null }
+      - { name: Syaphrubesi, lon: null, lat: null }
+      - { name: Betrawati, lon: null, lat: null }
+      - { name: Bidur, lon: null, lat: null }
+    post_window_complete_after: "2026-12-15" # runs before this are PROVISIONAL
+    exclude_dates: []
+    s2_pre: { start: "2025-10-01", end: "2025-12-15" }
+    s2_post: { start: "2026-10-01", end: "2026-12-15" }
+    # Calendar dates from section 4.1. The 14:52 offset applies to the post
+    # window only, because that is event time plus 12 h.
+    s1_pre: { start: "2025-08-26T00:00:00Z", end: "2025-09-30T00:00:00Z" }
+    s1_post: { start: "2026-08-26T14:52:00Z", end: "2026-09-30T00:00:00Z" }
+    sar_near: { start: "2026-06-01T00:00:00Z", end: "2026-08-26T00:00:00Z" }
+    known_floods_between: []
+    manual_exclusions: [] # filled from this event's post-event sheets (14.19 e)
+    manual_exclusions_confirmed_on: null
+    placebo:
+      s2_pre: { start: "2022-10-01", end: "2022-12-15" }
+      s2_post: { start: "2023-10-01", end: "2023-12-15" }
+      fake_event_date: "2023-08-26"
+      s1_pre: { start: "2022-08-26T14:52:00Z", end: "2022-09-30T00:00:00Z" }
+      s1_post: { start: "2023-08-26T14:52:00Z", end: "2023-09-30T00:00:00Z" }

@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+requirements.lock.txt
+/data
+/outputs
+/cache
+.pytest_cache/
+CURSOR_BUILD_SPEC.md
+prompts.md
+research-premise.md
+terminology.md
