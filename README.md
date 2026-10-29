@@ -1,49 +1,66 @@
-# Flood Mapping
+## Clone
 
-This project builds a geospatial analysis pipeline for studying whether pre-flood riverbank forest is associated with reduced lateral reach of Himalayan debris floods. It combines satellite imagery, terrain, river transects, and validation data to measure flood reach on each bank while accounting for terrain and river conditions. The study is observational: results describe associations, not proof that forest caused a difference.
+Clone the repository and enter its root directory:
 
-## Requirements
+````sh
 
 - Windows 10/11 with PowerShell
-- Python 3.11 or newer
-- Git
-- Internet access to install packages and download Earth Engine data
-- A Google Earth Engine account and registered Google Cloud project for the `fetch` step
-- QGIS for checking or editing the river centerline and reviewing spatial outputs
 
 ## Clone and install
-
+## Setup
 Open PowerShell and run:
+Create and activate a virtual environment, then install the project in editable mode.
+
+Linux/macOS:
+
+```sh
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+````
+
+Windows PowerShell:
 
 ```powershell
-git clone https://github.com/Nandan090/Flood-mapping.git
-cd Flood-mapping
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r requirements.txt
-$env:PYTHONPATH = "$PWD\src"
+python -m pip install -e .
 ```
 
 If PowerShell blocks environment activation, allow local scripts for your user, then activate again:
 
-```powershell
+````powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\.venv\Scripts\Activate.ps1
+cd Flood-mapping
+py -3.11 -m venv .venv
+Verify the installation:
+python -m pip install --upgrade pip
+```sh
+python -m floodforest.cli --help
+````
+
+$env:PYTHONPATH = "$PWD\src"
+Earth Engine is required to fetch remote satellite and terrain data, but not to run the local test suite. With the virtual environment active, authenticate once:
+
+```sh
+earthengine authenticate
 ```
 
-Each time you open a new PowerShell window, change to the project folder, activate `.venv`, and set `PYTHONPATH` again. The repository currently has no package-install configuration, so the `PYTHONPATH` setting lets Python find the code under `src/`.
+````powershell
+Register a Google Cloud project for noncommercial Earth Engine use, then set its project ID in `config.yaml` under `ee_project`. Do not add credentials or tokens to the repository. Before running `fetch`, make sure `data/<event>/centerline.geojson` exists and has been verified in QGIS; the configured centerline path for each event is listed in `config.yaml`.
 
-## Configure Earth Engine
 
 Earth Engine is needed to fetch remote satellite and terrain data, but not to run the local test suite.
-
+With the virtual environment active, run from the project root:
 1. Register a Google Cloud project for noncommercial Earth Engine use and make a note of its project ID.
 2. With the virtual environment active, authenticate once:
 
    ```powershell
    earthengine authenticate
-   ```
+````
 
 3. Open `config.yaml` and set `ee_project` to that registered project ID. Do not add credentials or tokens to the repository.
 4. Before fetching, confirm the event's centerline file exists and has been checked in QGIS with `verified_by_user: true`. The Melamchi event is the project's current fetch target.
