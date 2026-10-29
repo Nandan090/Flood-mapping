@@ -2,7 +2,10 @@
 __pycache__/
 *.pyc
 requirements.lock.txt
-/data
+/data/*
+!/data/*/
+/data/*/*
+!/data/*/centerline.geojson
 /outputs
 /cache
 .pytest_cache/
