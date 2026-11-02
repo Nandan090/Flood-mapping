@@ -1,0 +1,529 @@
+{
+  "verdict": "Inconclusive",
+  "reasons": [
+    "placebo not null (8.9): the main result cannot be trusted",
+    "not met: Model A reach height: beta < 0, interval excludes 0",
+    "not met: Model B reach height: beta < 0, interval excludes 0",
+    "not met: reach distance: same sign in Model A and B",
+    "not met: same sign under optical-only and radar-only labels",
+    "not met: same sign under both DEMs",
+    "not met: placebo null",
+    "not met: validation omission not materially higher on forested banks",
+    "intervals include the null but are not reasonably narrow (14.10)"
+  ],
+  "checks": {
+    "a_height_neg_sig": false,
+    "b_height_neg_sig": false,
+    "dist_same_sign": false,
+    "labels_same_sign": false,
+    "dems_same_sign": false,
+    "placebo_null": false,
+    "placebo_effects": "Model A log1p reach distance: -0.38 [-0.86, -0.00], p(0) = 0.050; Model B log1p reach distance: -0.39 [-0.80, -0.08], p(0) = 0.020",
+    "validation_ok": false,
+    "validation_note": "under-detected High 26.7% vs Low 10.0% (gap 16.7 points, flag above 10)",
+    "validated": true,
+    "enough_blocks": true,
+    "overlap_ok": true,
+    "model_b_informative": true,
+    "all_include_null": true,
+    "all_narrow": false
+  },
+  "primary": {
+    "rows": 542,
+    "rhs_a": "forest_frac + np.log(channel_width_m) + gradient + np.log(valley_width_m) + wall_slope_deg + bank_slope_deg + log10_upa + outer_bend + curvature + bank_elev_m + C(side) + cr(river_km, df=5) + valley_wall_found + channel_resolved + C(river_section)",
+    "dropped_missing": 1,
+    "support": {
+      "rule": "F >= 0.5",
+      "bounds": [
+        0.036067176130955766,
+        0.9960581360904285
+      ],
+      "rows": 542,
+      "kept": 380,
+      "dropped": 162,
+      "kept_segments": 36,
+      "too_thin": false
+    },
+    "a_rows": 380,
+    "a_stations": 258,
+    "a_segments": 36,
+    "a_blocks": 12,
+    "A": {
+      "y_height": {
+        "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+        "beta": -0.5154987253303482,
+        "se_cluster": 0.625845932657454,
+        "p0": 0.30865432716358177,
+        "excludes_zero": false,
+        "interval": [
+          -1.7011834024352905,
+          0.7435272720078894
+        ],
+        "n_clusters": 12,
+        "draws": 1999,
+        "percentile": {
+          "method": "1 km pairs block bootstrap, percentile interval",
+          "label": "known to be too narrow with few segments",
+          "interval": [
+            -2.635474607387405,
+            1.662052467166531
+          ],
+          "reps": 2000
+        }
+      },
+      "y_logdist": {
+        "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+        "beta": -0.3083854873147801,
+        "se_cluster": 0.18261115407471437,
+        "p0": 0.11405702851425713,
+        "excludes_zero": false,
+        "interval": [
+          -0.6928675656205263,
+          0.11604278094480994
+        ],
+        "n_clusters": 12,
+        "draws": 1999,
+        "percentile": {
+          "method": "1 km pairs block bootstrap, percentile interval",
+          "label": "known to be too narrow with few segments",
+          "interval": [
+            -0.8670610664919014,
+            0.36358190422656067
+          ],
+          "reps": 2000
+        }
+      },
+      "y_over": {
+        "method": "cluster-robust SE with t critical value (approximate)",
+        "beta": -0.2835639661346716,
+        "se_cluster": 0.4352872959722862,
+        "odds_ratio": 0.753094948026459,
+        "or_interval": [
+          0.2889143952529283,
+          1.9630451443807961
+        ],
+        "df": 11
+      }
+    },
+    "sd": {
+      "y_height": 7.360480970581137,
+      "y_logdist": 1.6141468229429172
+    },
+    "prevalence": 0.6421052631578947,
+    "iqr_F": 0.8017288310463699,
+    "b_info": {
+      "stations": 239,
+      "stations_large_diff": 113,
+      "informative": true,
+      "abs_diff_quantiles": [
+        0.002,
+        0.172,
+        0.548
+      ]
+    },
+    "b_blocks": 12,
+    "B": {
+      "y_height": {
+        "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+        "beta": 2.1449496167432356,
+        "se_cluster": 1.196969451484122,
+        "p0": 0.07803901950975488,
+        "excludes_zero": false,
+        "interval": [
+          -0.30977289118318657,
+          5.160751555052839
+        ],
+        "n_clusters": 12,
+        "draws": 1999,
+        "percentile": {
+          "method": "1 km pairs block bootstrap, percentile interval",
+          "label": "known to be too narrow with few segments",
+          "interval": [
+            -0.36929459291388245,
+            4.695648549991299
+          ],
+          "reps": 2000
+        }
+      },
+      "y_logdist": {
+        "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+        "beta": 0.08831388053349619,
+        "se_cluster": 0.3907143515289375,
+        "p0": 0.824912456228114,
+        "excludes_zero": false,
+        "interval": [
+          -0.777057358985674,
+          1.100203001876018
+        ],
+        "n_clusters": 12,
+        "draws": 1999,
+        "percentile": {
+          "method": "1 km pairs block bootstrap, percentile interval",
+          "label": "known to be too narrow with few segments",
+          "interval": [
+            -0.5386757313599421,
+            0.7371067647785479
+          ],
+          "reps": 2000
+        }
+      }
+    },
+    "aft": {
+      "y_dist": {
+        "method": "Weibull AFT, right-censored, robust (not cluster) SE; conditional on reach > 0",
+        "beta_log_time": -0.022918541970475097,
+        "time_ratio": 0.9773420928918908,
+        "ci_time_ratio": [
+          0.6334026666080445,
+          1.5080415932782716
+        ],
+        "p": 0.917514145754181,
+        "rows": 302,
+        "censored": 81,
+        "zero_outcome_rows_left_out": 0
+      },
+      "y_height": {
+        "method": "Weibull AFT, right-censored, robust (not cluster) SE; conditional on reach > 0",
+        "beta_log_time": -0.1260050113116227,
+        "time_ratio": 0.8816104287477577,
+        "ci_time_ratio": [
+          0.4709130048723128,
+          1.6504894535404722
+        ],
+        "p": 0.693702325733573,
+        "rows": 271,
+        "censored": 79,
+        "zero_outcome_rows_left_out": 31
+      }
+    }
+  },
+  "placebo": {
+    "placebo: kept rows (primary)": {
+      "rows": 339,
+      "rhs_a": "forest_frac + np.log(channel_width_m) + gradient + np.log(valley_width_m) + wall_slope_deg + bank_slope_deg + log10_upa + outer_bend + curvature + bank_elev_m + C(side) + cr(river_km, df=5) + valley_wall_found + channel_resolved + C(river_section)",
+      "dropped_missing": 0,
+      "support": {
+        "rule": "F >= 0.5",
+        "bounds": [
+          0.06747073864013377,
+          0.9964210006750411
+        ],
+        "rows": 339,
+        "kept": 217,
+        "dropped": 122,
+        "kept_segments": 34,
+        "too_thin": false
+      },
+      "a_rows": 217,
+      "a_stations": 157,
+      "a_segments": 34,
+      "a_blocks": 12,
+      "A": {
+        "y_height": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.7155207262673474,
+          "se_cluster": 0.4323224945412401,
+          "p0": 0.1295647823911956,
+          "excludes_zero": false,
+          "interval": [
+            -1.8993413070228526,
+            0.17107813949105516
+          ],
+          "n_clusters": 12,
+          "draws": 1999,
+          "percentile": {
+            "method": "1 km pairs block bootstrap, percentile interval",
+            "label": "known to be too narrow with few segments",
+            "interval": [
+              -1.863000421117639,
+              0.11934974005496606
+            ],
+            "reps": 2000
+          }
+        },
+        "y_logdist": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.38303769608371985,
+          "se_cluster": 0.16896758982382806,
+          "p0": 0.04952476238119059,
+          "excludes_zero": true,
+          "interval": [
+            -0.8615591907019831,
+            -0.003520648627856035
+          ],
+          "n_clusters": 12,
+          "draws": 1999,
+          "percentile": {
+            "method": "1 km pairs block bootstrap, percentile interval",
+            "label": "known to be too narrow with few segments",
+            "interval": [
+              -0.7920266627001485,
+              -0.05279007929919995
+            ],
+            "reps": 2000
+          }
+        },
+        "y_over": {
+          "error": "not estimable: 4 rows in the smaller outcome class, fewer than the 20 model terms"
+        }
+      },
+      "sd": {
+        "y_height": 2.0145316811873575,
+        "y_logdist": 0.6646272077901189
+      },
+      "prevalence": 0.018433179723502304,
+      "iqr_F": 0.5837254901960784,
+      "b_info": {
+        "stations": 140,
+        "stations_large_diff": 81,
+        "informative": true,
+        "abs_diff_quantiles": [
+          0.08,
+          0.279,
+          0.645
+        ]
+      },
+      "b_blocks": 12,
+      "B": {
+        "y_height": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.8461987746273474,
+          "se_cluster": 0.42467901519698376,
+          "p0": 0.06503251625812906,
+          "excludes_zero": false,
+          "interval": [
+            -2.0754454553342416,
+            0.15743717925614936
+          ],
+          "n_clusters": 12,
+          "draws": 1999,
+          "percentile": {
+            "method": "1 km pairs block bootstrap, percentile interval",
+            "label": "known to be too narrow with few segments",
+            "interval": [
+              -2.0202263876353874,
+              0.09034509770333485
+            ],
+            "reps": 2000
+          }
+        },
+        "y_logdist": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.3855426421878897,
+          "se_cluster": 0.14768724920527965,
+          "p0": 0.01950975487743872,
+          "excludes_zero": true,
+          "interval": [
+            -0.8026437405293632,
+            -0.07689936748154357
+          ],
+          "n_clusters": 12,
+          "draws": 1999,
+          "percentile": {
+            "method": "1 km pairs block bootstrap, percentile interval",
+            "label": "known to be too narrow with few segments",
+            "interval": [
+              -0.8765967067160559,
+              -0.030490226077655606
+            ],
+            "reps": 2000
+          }
+        }
+      }
+    },
+    "placebo: + 14.20 assumed-zero rows": {
+      "rows": 522,
+      "rhs_a": "forest_frac + np.log(channel_width_m) + gradient + np.log(valley_width_m) + wall_slope_deg + bank_slope_deg + log10_upa + outer_bend + curvature + bank_elev_m + C(side) + cr(river_km, df=5) + valley_wall_found + channel_resolved + C(river_section)",
+      "dropped_missing": 2,
+      "support": {
+        "rule": "F >= 0.5",
+        "bounds": [
+          0.07955439750355264,
+          0.9904195186335962
+        ],
+        "rows": 522,
+        "kept": 340,
+        "dropped": 182,
+        "kept_segments": 35,
+        "too_thin": false
+      },
+      "a_rows": 340,
+      "a_stations": 234,
+      "a_segments": 35,
+      "a_blocks": 12,
+      "A": {
+        "y_height": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.26211041511009414,
+          "se_cluster": 0.2349479848234976,
+          "p0": 0.2876438219109555,
+          "excludes_zero": false,
+          "interval": [
+            -0.8724245163117578,
+            0.1830058842625478
+          ],
+          "n_clusters": 12,
+          "draws": 1999
+        },
+        "y_logdist": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.22425601783348004,
+          "se_cluster": 0.10824757838501757,
+          "p0": 0.08254127063531766,
+          "excludes_zero": false,
+          "interval": [
+            -0.5062917005788188,
+            0.03410050714013611
+          ],
+          "n_clusters": 12,
+          "draws": 1999
+        },
+        "y_over": {
+          "error": "not estimable: 4 rows in the smaller outcome class, fewer than the 20 model terms"
+        }
+      },
+      "sd": {
+        "y_height": 1.385933814787496,
+        "y_logdist": 0.5225614600442979
+      },
+      "prevalence": 0.011764705882352941,
+      "iqr_F": 0.6296969696969696,
+      "b_info": {
+        "stations": 220,
+        "stations_large_diff": 117,
+        "informative": true,
+        "abs_diff_quantiles": [
+          0.042,
+          0.239,
+          0.615
+        ]
+      },
+      "b_blocks": 12,
+      "B": {
+        "y_height": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.5503430506556175,
+          "se_cluster": 0.27865224197199917,
+          "p0": 0.08854427213606804,
+          "excludes_zero": false,
+          "interval": [
+            -1.1783990804128186,
+            0.16043786343702104
+          ],
+          "n_clusters": 12,
+          "draws": 1999
+        },
+        "y_logdist": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.254357146376501,
+          "se_cluster": 0.08495844389935155,
+          "p0": 0.016008004002001,
+          "excludes_zero": true,
+          "interval": [
+            -0.48766099817823594,
+            -0.05822261378073237
+          ],
+          "n_clusters": 12,
+          "draws": 1999
+        }
+      }
+    },
+    "placebo: 2020 forest": {
+      "rows": 339,
+      "rhs_a": "forest_frac + np.log(channel_width_m) + gradient + np.log(valley_width_m) + wall_slope_deg + bank_slope_deg + log10_upa + outer_bend + curvature + bank_elev_m + C(side) + cr(river_km, df=5) + valley_wall_found + channel_resolved + C(river_section)",
+      "dropped_missing": 0,
+      "support": {
+        "rule": "F >= 0.5",
+        "bounds": [
+          0.08600804511461764,
+          0.9913338758347461
+        ],
+        "rows": 339,
+        "kept": 207,
+        "dropped": 132,
+        "kept_segments": 32,
+        "too_thin": false
+      },
+      "a_rows": 207,
+      "a_stations": 154,
+      "a_segments": 32,
+      "a_blocks": 12,
+      "A": {
+        "y_height": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.567756205733924,
+          "se_cluster": 0.610654733389874,
+          "p0": 0.4072036018009004,
+          "excludes_zero": false,
+          "interval": [
+            -2.392564295746634,
+            0.6463971508889113
+          ],
+          "n_clusters": 12,
+          "draws": 1999
+        },
+        "y_logdist": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.43710460322154243,
+          "se_cluster": 0.27999245657984306,
+          "p0": 0.16558279139569784,
+          "excludes_zero": false,
+          "interval": [
+            -1.4466086556558984,
+            0.13491123580680883
+          ],
+          "n_clusters": 12,
+          "draws": 1999
+        },
+        "y_over": {
+          "error": "not estimable: 3 rows in the smaller outcome class, fewer than the 20 model terms"
+        }
+      },
+      "sd": {
+        "y_height": 1.9515150548417193,
+        "y_logdist": 0.6366694841459635
+      },
+      "prevalence": 0.014492753623188406,
+      "iqr_F": 0.6143860651056539,
+      "b_info": {
+        "stations": 140,
+        "stations_large_diff": 77,
+        "informative": true,
+        "abs_diff_quantiles": [
+          0.057,
+          0.265,
+          0.623
+        ]
+      },
+      "b_blocks": 12,
+      "B": {
+        "y_height": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.8486420677920121,
+          "se_cluster": 1.0104496223776709,
+          "p0": 0.4782391195597799,
+          "excludes_zero": false,
+          "interval": [
+            -3.8128907646890076,
+            1.168310108125917
+          ],
+          "n_clusters": 12,
+          "draws": 1999
+        },
+        "y_logdist": {
+          "method": "wild cluster bootstrap-t, null imposed, Rademacher weights",
+          "beta": -0.39496153350980806,
+          "se_cluster": 0.25143558471684796,
+          "p0": 0.1310655327663832,
+          "excludes_zero": false,
+          "interval": [
+            -1.1404287553851502,
+            0.06960499606468055
+          ],
+          "n_clusters": 12,
+          "draws": 1999
+        }
+      }
+    }
+  }
+}

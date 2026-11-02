@@ -20,7 +20,7 @@ The real event's files were only read. The real event's Oct-Dec 2020 forest base
 
 ## Expected outcome and result
 
-Expected with no flood (8.9): near-zero reach. The spec sets no numeric pass mark for 'near-zero', so the placebo is shown beside the real event. The second part of 8.9 (beta1 not distinguishable from zero) needs the `stats` step, which is not built yet.
+Expected with no flood (8.9): near-zero reach. The spec sets no numeric pass mark for 'near-zero', so the placebo is shown beside the real event. The second part of 8.9 (beta1 not distinguishable from zero) is fitted by the `stats` step through the same Model A and Model B code as the real event: see `outputs/melamchi2021/stats/STATS_REPORT.md`.
 
 | Analysis set, combined label, FABDEM | Placebo 2018-19 | Real event 2021 |
 |---|---:|---:|
@@ -108,6 +108,8 @@ Affected river reaches (river km with any analysis row overtopped in the placebo
 - Placebo (2018 forest): 113 stations (226 rows); mean forest fraction of those rows 0.50 vs 0.36 in the analysis set. River km: 0.00–0.10, 1.13–1.54, 1.74, 1.95–2.05, 2.26, 2.46, 2.67–2.77, 2.97–3.28, 3.48, 3.79–3.89, 4.10, 4.30–4.60, 4.80, 5.01–5.41, 5.61, 5.82–6.43, 6.63–7.14, 7.65, 7.85–7.95, 8.16–8.26, 8.86–8.97, 9.27–9.38, 9.59, 10.09–10.19, 10.49–11.00, 11.40–11.50, 12.42, 13.94, 14.75, 15.76, 16.37–16.47, 16.87, 17.48, 17.68, 17.98, 18.69, 18.89, 19.10–19.50, 19.70, 20.10, 21.82–22.22, 23.12–23.22, 23.43–23.83, 24.03–24.33, 25.75–25.85, 27.26, 27.77–27.87, 28.17–28.27, 29.48, 33.31, 34.41, 34.61–34.72 km.
 - Real event (2020 forest): 8 stations (16 rows); mean forest fraction of those rows 0.82 vs 0.39 in the analysis set. River km: 1.44, 2.26, 2.77, 5.11, 5.82, 6.03–6.13, 10.59 km.
 
+The placebo drops 42% of High-forest rows for river_not_visible (99 of 235), against 24% of Low-forest rows (56 of 235); Mid 30% (terciles of the 2018 forest over all in-reach rows). The placebo therefore cannot speak for the densest forest.
+
 Rule 14.20 keeps a row only if bare or impacted ground within 30 m of the station shows where the river is. After the 2021 flood the bed was bare almost everywhere; in an ordinary year a narrow river under canopy is often invisible at 10 m. The placebo analysis set therefore has fewer rows, mostly fewer forested gorge rows, than the real event. The 14.20 sensitivity (those rows with reach 0) is in the table at the end of the forest section.
 
 ## Forest exposure
@@ -120,7 +122,7 @@ Primary (14.2): forest from the placebo pre window (Oct-Dec 2018), with Dynamic 
 - right bank, river km: none
 - Stand-in analysis rows per 2018 forest tercile: Low 0, Mid 0, High 0
 
-Descriptive only; no model is fitted (the `stats` step is not built). Terciles are equal-count groups of the analysis set; ties (many rows have no forest) are split by station order. With so few overtopped rows, differences between terciles are a few rows and should not be read as a trend.
+Descriptive only; the models are in the `stats` report. Terciles are equal-count groups of the analysis set; ties (many rows have no forest) are split by station order. With so few overtopped rows, differences between terciles are a few rows and should not be read as a trend.
 
 **2018 forest (primary)**
 
@@ -166,7 +168,7 @@ Stand-in sensitivity, beside the main placebo result:
 ## Limitations
 
 - The placebo shows how much impact the method finds when no notable flood occurred. It does not prove that no local flood, high flow or bank erosion happened in the period.
-- The forest-effect half of the placebo test (beta1, 8.9) waits for the `stats` step.
+- The forest-effect half of the placebo test (beta1, 8.9) is in the `stats` report; it covers only rows whose river was visible, which leaves out much of the densest forest.
 - Diagnostic categories use 10 m imagery and a 30 m DEM; they are review aids, not causes. Visual reviews exist only for the spots in the review file.
 - The placebo forest uses ETH canopy height 2020 (after the placebo period) and, where Dynamic World has no 2018 image, the WorldCover 2020 stand-in (flagged rows).
 - The 2021 validation edges (14.25) belong to the real event and are not applicable here.
