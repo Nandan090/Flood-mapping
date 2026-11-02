@@ -1,0 +1,4 @@
+cutoff_m,low_n,low_under_detected,low_share,mid_n,mid_under_detected,mid_share,high_n,high_under_detected,high_share,high_minus_low,flagged
+10.0,10,1,0.1,10,6,0.6,15,9,0.6,0.5,True
+20.0,10,1,0.1,10,2,0.2,15,4,0.26666666666666666,0.16666666666666666,True
+30.0,10,0,0.0,10,1,0.1,15,0,0.0,0.0,False
