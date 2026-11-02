@@ -14,6 +14,8 @@ from html import unescape
 from pathlib import Path
 
 SNAP_LIMIT_M = 20.0
+VALIDATION_DATE_START = "2021-08-01"
+VALIDATION_DATE_END = "2022-05-31"
 _EDGE_NAME = re.compile(r"^(\d+)_(left|right)$", re.IGNORECASE)
 _STATION_NAME = re.compile(r"^station_(\d+)$")
 _FIELD_KEYS = ("image_date", "confidence", "note")
@@ -204,9 +206,15 @@ def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_pat
     rows = []
     refused = []
     mismatches = []
+    outside_window = 0
     for i, row in enumerate(raw.itertuples(index=False)):
         geom = getattr(row, "geometry", None)
         if geom is None or geom.is_empty:
+            continue
+        image_date = _as_iso_date(getattr(row, "image_date", None),
+                                  f"row {i + 1}", required=False)
+        if image_date is None or not VALIDATION_DATE_START <= image_date <= VALIDATION_DATE_END:
+            outside_window += 1
             continue
         try:
             station_id = int(row.station_id)
@@ -233,7 +241,6 @@ def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_pat
                 "derived": derived,
                 "line": line_side,
             })
-        image_date = _as_iso_date(getattr(row, "image_date", None), f"station {station_id}")
         wayback = _as_iso_date(getattr(row, "wayback_release", None), f"station {station_id}",
                                required=False)
         confidence = _as_confidence(getattr(row, "confidence", None), f"station {station_id}")
@@ -248,6 +255,8 @@ def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_pat
             "note": note,
             "geometry": snapped,
         })
+    if refused:
+        raise RuntimeError("Conversion refused; no GeoJSON was written.\n" + "\n".join(refused))
     if not rows:
         raise RuntimeError(
             "No validation edges were written.\n" + "\n".join(refused or ["No point features."]))
@@ -261,6 +270,7 @@ def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_pat
         "n_read": int(raw.geometry.notna().sum()) if "geometry" in raw else len(raw),
         "n_written": len(out),
         "refused": refused,
+        "outside_date_window": outside_window,
         "mismatches": mismatches,
         "points_per_image_date": out["image_date"].value_counts().sort_index().to_dict(),
         "stations_written": sorted(int(s) for s in out["station_id"].unique()),

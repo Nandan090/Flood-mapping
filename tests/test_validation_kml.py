@@ -124,17 +124,35 @@ def test_a_gpkg_point_far_from_both_lines_is_refused(tmp_path):
         crs="EPSG:32645",
     ).to_file(edges, layer="validation_edges", driver="GPKG")
     out = tmp_path / "validation_edges.geojson"
-    path, report = convert_edge_gpkg(edges, lines, out, {7: 120.0}, max_distance_m=20)
+    with pytest.raises(RuntimeError, match="(?s)Conversion refused.*20 m"):
+        convert_edge_gpkg(edges, lines, out, {7: 120.0}, max_distance_m=20)
+    assert not out.exists()
+
+
+def test_gpkg_conversion_ignores_points_outside_capture_date_window(tmp_path):
+    lines = tmp_path / "sample_transects.gpkg"
+    right = LineString([(500000.0, 3100000.0), (500000.0, 3099800.0)])
+    gpd.GeoDataFrame(
+        {"station_id": [7, 7], "side": ["left", "right"], "river_km": [1.0, 1.0]},
+        geometry=[LINE, right], crs="EPSG:32645",
+    ).to_file(lines, layer="transects", driver="GPKG")
+    edges = tmp_path / "validation_edges.gpkg"
+    gpd.GeoDataFrame(
+        {"station_id": [7, 7], "side": ["left", "left"],
+         "image_date": ["2021-07-31", "2022-01-17"],
+         "wayback_release": [None, "2024-11-18"], "confidence": [1, 1], "note": ["", ""]},
+        geometry=[Point(500000.0, 3100050.0), Point(500000.0, 3100080.0)],
+        crs="EPSG:32645",
+    ).to_file(edges, layer="validation_edges", driver="GPKG")
+    out = tmp_path / "validation_edges.geojson"
+    path, report = convert_edge_gpkg(edges, lines, out, {7: 120.0})
     props = json.loads(Path(path).read_text(encoding="utf-8"))["features"][0]["properties"]
     assert props["side"] == "right"
     assert props["station_id"] == 7
     assert report["n_written"] == 1
-    assert len(report["refused"]) == 1
+    assert report["outside_date_window"] == 1
     assert report["mismatches"][0]["recorded"] == "left"
     assert report["mismatches"][0]["derived"] == "right"
-    snapped, offset, gap, line = snap_to_station_transects(
-        Point(500000.0, 3100080.0), left, right)
-    assert line == "left" and offset == pytest.approx(80.0) and gap == pytest.approx(0.0)
 
 
 def test_a_bad_name_or_confidence_is_refused(tmp_path):

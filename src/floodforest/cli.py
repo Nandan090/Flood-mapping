@@ -11,7 +11,7 @@ import argparse
 
 STEPS = ["fetch", "label", "transects", "profiles", "table", "stats",
          "validate", "placebo", "report", "all", "qa_centerline", "dw_gap_check",
-         "edges"]
+         "edges", "compare"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -71,6 +71,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         from .validate import import_validation_edges
         import_validation_edges(args.event)
+        return 0
+    if args.step == "compare":
+        from .validate import run_validation_comparison
+        run_validation_comparison(args.event)
         return 0
     raise SystemExit(
         f"Step '{args.step}' for {args.event} is not built yet."
