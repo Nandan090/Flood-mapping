@@ -33,7 +33,79 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> SimpleNamespace:
         raw = yaml.safe_load(fh)
     cfg = _namespace(raw)
     cfg.config_path = str(path)
+    _add_placebo_events(cfg)
     return cfg
+
+
+PLACEBO_SUFFIX = "_placebo"
+
+
+def placebo_key(event_key: str) -> str:
+    return f"{event_key}{PLACEBO_SUFFIX}"
+
+
+def shift_years(stamp: str, years: int) -> str:
+    """Move a 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM:SSZ' stamp by whole years,
+    keeping month, day and time (spec 14.2: same month-day offsets)."""
+    if not isinstance(stamp, str) or len(stamp) < 10:
+        raise ValueError(f"Expected a date or UTC timestamp, got {stamp!r}")
+    year, rest = int(stamp[:4]), stamp[4:]
+    if rest.startswith("-02-29"):
+        raise ValueError(f"{stamp} is 29 February; it has no same-day shift.")
+    return f"{year + years:04d}{rest}"
+
+
+def _window(start: str, end: str) -> SimpleNamespace:
+    return SimpleNamespace(start=start, end=end)
+
+
+def derive_placebo_event(event: SimpleNamespace, event_key: str) -> SimpleNamespace:
+    """The no-flood control of one event, as an event the pipeline can run (8.9, 14.2).
+
+    Everything (centerline, reach, manual exclusions, section breaks) is the real
+    event's. The image windows are the placebo block's, as written. The pre/post
+    cutoffs and the sar_near sensitivity window are the real ones moved to the
+    fake event date by whole years. Nothing here changes the real event.
+    """
+    block = event.placebo
+    first = event.event_dates[0]
+    if block.fake_event_date[4:] != first[4:]:
+        raise ValueError(
+            f"{event_key} placebo fake_event_date {block.fake_event_date} does not share "
+            f"the month and day of the event date {first}; 14.2 shifts by whole years.")
+    years = int(block.fake_event_date[:4]) - int(first[:4])
+    out = SimpleNamespace(**{k: v for k, v in vars(event).items() if k != "placebo"})
+    out.name = f"{event.name}: placebo (no-flood control, 14.2)"
+    out.base_event = event_key
+    out.is_placebo = True
+    out.year_shift = years
+    out.event_dates = [block.fake_event_date]
+    out.event_time_utc = (shift_years(event.event_time_utc, years)
+                          if getattr(event, "event_time_utc", None) else None)
+    out.pre_end_utc = shift_years(event.pre_end_utc, years)
+    out.post_start_utc = shift_years(event.post_start_utc, years)
+    for name in ("s2_pre", "s2_post", "s1_pre", "s1_post"):
+        win = getattr(block, name)
+        setattr(out, name, _window(win.start, win.end))
+    if hasattr(event, "sar_near"):
+        out.sar_near = _window(shift_years(event.sar_near.start, years),
+                               shift_years(event.sar_near.end, years))
+    out.exclude_dates = []
+    out.known_floods_between = []
+    out.flood_check = getattr(block, "flood_check", None)
+    out.worldcover_standin = getattr(block, "worldcover_standin", None)
+    if hasattr(out, "dynamic_world_gap_check"):
+        del out.dynamic_world_gap_check
+    return out
+
+
+def _add_placebo_events(cfg) -> None:
+    events = getattr(cfg, "events", None)
+    if events is None:
+        return
+    for key, event in list(vars(events).items()):
+        if hasattr(event, "placebo"):
+            setattr(events, placebo_key(key), derive_placebo_event(event, key))
 
 
 def parse_utc(timestamp: str) -> datetime:

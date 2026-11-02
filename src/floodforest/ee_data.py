@@ -36,13 +36,16 @@ class AssetError(RuntimeError):
 def fetch_event(event_key: str, config_path: str | Path | None = None,
                 only: list[str] | None = None) -> Path:
     """Download the corridor rasters for one event and write provenance.json."""
-    if event_key not in FETCH_EVENTS:
+    cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
+    event = getattr(cfg.events, event_key, None)
+    base_key = getattr(event, "base_event", event_key)
+    if base_key not in FETCH_EVENTS or event is None:
         raise RuntimeError(
-            f"fetch is implemented for {', '.join(FETCH_EVENTS)} only. "
+            f"fetch is implemented for {', '.join(FETCH_EVENTS)} (and their placebo) only. "
             f"{event_key} is a later step, and nothing was downloaded for it."
         )
-    cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
-    event = getattr(cfg.events, event_key)
+    if getattr(event, "is_placebo", False):
+        require_confirmed_flood_check(event, event_key)
     _require_exclude_dates(event, event_key)
     _initialize(cfg.ee_project)
 
@@ -63,7 +66,9 @@ def fetch_event(event_key: str, config_path: str | Path | None = None,
     if dem_notice:
         print(dem_notice)
 
-    worldcover = _worldcover_for_year(cfg, pre_year)
+    worldcover, standin = worldcover_for_event(cfg, event, pre_year)
+    if standin:
+        print(standin["note"])
     groups = _scene_groups(cfg, event, region)
     _print_scenes(groups)
 
@@ -84,12 +89,20 @@ def fetch_event(event_key: str, config_path: str | Path | None = None,
         "worldcover_exported": {
             "id": worldcover.id,
             "year": worldcover.year,
-            "reason": f"map year matches the Sentinel-2 pre-composite year {pre_year}",
+            "reason": (standin["note"] if standin else
+                       f"map year matches the Sentinel-2 pre-composite year {pre_year}"),
+            **({"placebo_standin_for_year": pre_year} if standin else {}),
         },
+        **({"placebo": {"base_event": event.base_event, "fake_event_date": event.event_dates[0],
+                        "pre_end_utc": event.pre_end_utc, "post_start_utc": event.post_start_utc,
+                        "flood_free_interval_confirmed": {
+                            "start": event.flood_check.interval.start,
+                            "end": event.flood_check.interval.end}}}
+           if getattr(event, "is_placebo", False) else {}),
         "worldcover_not_exported": [
             {"id": item.id, "year": item.year,
              "reason": "map year is not the pre-composite year, so it was not used"}
-            for item in cfg.assets.worldcover if item.year != pre_year
+            for item in cfg.assets.worldcover if item.year != worldcover.year
         ],
         "exclude_dates": list(event.exclude_dates),
         "known_floods_between": _known_floods(event, event_key),
@@ -324,6 +337,45 @@ def _list_assets(parent: str) -> list:
         token = page.get("nextPageToken")
         if not token:
             return found
+
+
+def require_confirmed_flood_check(event, event_key: str) -> None:
+    """A placebo runs only on a period the user confirmed free of notable floods (14.2),
+    and the confirmed interval must span the placebo windows."""
+    check = getattr(event, "flood_check", None)
+    if check is None or getattr(check, "status", None) != "confirmed":
+        raise RuntimeError(
+            f"{event_key}: the placebo period has no confirmed flood_check in config.yaml "
+            "(14.2: the user must confirm no notable flood hit the corridor). Nothing was run.")
+    start = min(event.s1_pre.start, event.s2_pre.start)[:10]
+    end = max(event.s1_post.end, event.s2_post.end)[:10]
+    if check.interval.start > start or check.interval.end < end:
+        raise RuntimeError(
+            f"{event_key}: the confirmed flood-free interval {check.interval.start} to "
+            f"{check.interval.end} does not cover the placebo windows {start} to {end}.")
+
+
+def worldcover_for_event(cfg, event, year: int):
+    """The WorldCover map for the pre-composite year (14.23 a).
+
+    A placebo event may carry an explicit worldcover_standin (user decision) when no
+    map exists for its year. Every other case keeps the exact-year rule.
+    Returns (asset entry, stand-in record or None).
+    """
+    standin = getattr(event, "worldcover_standin", None)
+    if getattr(event, "is_placebo", False) and standin is not None:
+        if standin.for_year != year:
+            raise AssetError(
+                f"worldcover_standin is for {standin.for_year}, but the placebo pre-composite "
+                f"year is {year}. No map was used.")
+        item = _worldcover_for_year(cfg, standin.year)
+        return item, {
+            "year": standin.year, "for_year": year, "decided_on": standin.decided_on,
+            "note": (f"Placebo only: WorldCover {standin.year} ({item.id}) stands in for "
+                     f"{year}, which has no map, where Dynamic World has no observation "
+                     f"(user decision {standin.decided_on}). Rows using it are flagged."),
+        }
+    return _worldcover_for_year(cfg, year), None
 
 
 def _worldcover_for_year(cfg, year: int):

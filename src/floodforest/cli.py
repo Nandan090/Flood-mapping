@@ -1,8 +1,8 @@
 """Command line entry point.
 
-Built so far: fetch, label, transects, profiles, table, the validation
-sampler, the validation-edge KML converter, and qa_centerline.
-The later analysis steps are not.
+Built so far: fetch, label, transects, profiles, table, placebo, the
+validation sampler, the validation-edge KML converter, compare and
+qa_centerline. stats, report and all are not built.
 """
 
 from __future__ import annotations
@@ -18,7 +18,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="floodforest")
     parser.add_argument("step", choices=STEPS)
     parser.add_argument("--event", required=True,
-                        choices=["melamchi2021", "lende2025", "bhotekoshi2026"])
+                        choices=["melamchi2021", "lende2025", "bhotekoshi2026",
+                                 "melamchi2021_placebo", "lende2025_placebo",
+                                 "bhotekoshi2026_placebo"],
+                        help="A *_placebo key reruns one step of the placebo; the placebo "
+                             "step itself takes the real event key.")
+    parser.add_argument("--refetch", action="store_true",
+                        help="placebo: download the placebo rasters again.")
     parser.add_argument("--only", action="append", default=None,
                         choices=["s1_pre", "copernicus_dem", "s1_near",
                                  "s1_geometry"],
@@ -32,6 +38,12 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--only applies to fetch.")
     if args.kml and args.step != "edges":
         raise SystemExit("--kml applies to edges.")
+    if args.refetch and args.step != "placebo":
+        raise SystemExit("--refetch applies to placebo.")
+    if args.step == "placebo":
+        from .placebo import run_placebo
+        run_placebo(args.event, refetch=args.refetch)
+        return 0
     if args.step == "fetch":
         from .ee_data import fetch_event
         fetch_event(args.event, only=args.only)

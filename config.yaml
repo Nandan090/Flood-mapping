@@ -162,6 +162,19 @@ validation_under_detect_sensitivity_m: [10, 20, 30] # cut-off sensitivity table 
 vantor_nodata: 0
 vantor_cloud_probability_max: 30
 
+# Placebo report (8.9, 14.2). The placebo runs the unchanged label and table
+# steps; these settings only sort the impact it detects into diagnostic
+# categories for review. They are the screening rules of
+# results/placebo_period_check.md, and they never decide whether a pixel is impact.
+placebo_diagnostics:
+  min_patch_px: 5 # smallest detection listed (500 m2)
+  hillslope_height_m: 20 # more than this above the nearby channel: hillslope (landslide or gully)
+  channel_margin_distance_m: 30 # within this of the pre-event active channel ...
+  channel_margin_height_m: 10 # ... and within this of channel height: channel margin
+  channel_search_m: 300 # channel pixels used for "height above channel"
+  review_match_m: 100 # a detection this close to a visually reviewed patch carries its review
+  visual_review_file: results/placebo_check/visual_review.csv
+
 # ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
@@ -250,6 +263,11 @@ events:
                                claude_verdict: "no convincing evidence of significant flood disturbance",
                                wayback_check: "patches 16, 29, 31, 59 at 0.5 m (2016-02-01, 2018-11-01, 2019-05-07, 2020-04); no flood deposit; patch 26 has no capture" }
         record: results/placebo_period_check.md
+      # Placebo only (user decision 2026-11-02). WorldCover has no 2018 map, so the
+      # 2020 map stands in where Dynamic World has no observation in the placebo
+      # pre window (14.23 a). Rows that use it are flagged and a sensitivity run
+      # leaves them out. Every other event still refuses a map-year mismatch.
+      worldcover_standin: { year: 2020, for_year: 2018, decided_on: "2026-11-02" }
 
   lende2025:
     name: Lende Khola lake-outburst flood

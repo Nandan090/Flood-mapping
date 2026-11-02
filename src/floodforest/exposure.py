@@ -230,6 +230,20 @@ def belt_metrics(index: np.ndarray, layers: dict, width: int) -> dict:
     return out
 
 
+def check_worldcover_year(provenance: dict) -> None:
+    """worldcover.tif must be the pre-event year's map (14.23 a). The only exception
+    is a placebo run whose fetch recorded an explicit stand-in for that year."""
+    year = provenance["hansen"]["pre_composite_year"]
+    exported = provenance.get("worldcover_exported", {})
+    if exported.get("year") == year:
+        return
+    if "placebo" in provenance and exported.get("placebo_standin_for_year") == year:
+        return
+    raise RuntimeError(
+        f"worldcover.tif is the {exported.get('year')} map, not the pre-event year "
+        f"{year}, so it cannot stand in for Dynamic World.")
+
+
 def forest_layers(event_key: str, cfg, provenance: dict, grid: dict) -> dict:
     """Pre-event exposure grids for the belts (7.3, 14.3, 14.14)."""
     from . import optical
@@ -244,12 +258,8 @@ def forest_layers(event_key: str, cfg, provenance: dict, grid: dict) -> dict:
     loss = _read_named(rasters / "hansen_loss_year.tif", ("loss_year",),
                        cfg.crs, grid)[0]["loss_year"]
     hansen = provenance["hansen"]
-    exported = provenance.get("worldcover_exported", {})
-    if exported.get("year") != hansen["pre_composite_year"]:
-        raise RuntimeError(
-            f"worldcover.tif is the {exported.get('year')} map, not the pre-event year "
-            f"{hansen['pre_composite_year']}, so it cannot stand in for Dynamic World.")
-    wc = _read_named(rasters / "worldcover.tif", ("class",), cfg.crs, grid)[0]["class"]
+    check_worldcover_year(provenance)
+    wc =_read_named(rasters / "worldcover.tif", ("class",), cfg.crs, grid)[0]["class"]
     forest, source = forest_with_unknowns(
         trees, height, np.nan_to_num(loss, nan=0.0), hansen["pre_composite_year"],
         cfg.trees_probability_min, cfg.canopy_height_min_m, cfg.hansen_loss_from_year,

@@ -559,7 +559,8 @@ def run_transects(event_key: str, config_path: str | Path | None = None) -> Path
     blocks = block_ids(km, event.reach_start_km, cfg.bootstrap_block_km,
                        cfg.bootstrap_final_block_min_km, event.reach_end_km)
     exclusions = manual_exclusions(event, event_key)
-    polygons = _load_exclusion_polygons(event_key, cfg.crs)
+    # A placebo uses its real event's dam and reservoir polygons.
+    polygons = _load_exclusion_polygons(getattr(event, "base_event", event_key), cfg.crs)
     near_conf, confluences = stations_near_confluence(
         km, upa, cfg.confluence_distance_m, cfg.confluence_upa_fraction,
         cfg.confluence_distance_m)

@@ -99,6 +99,33 @@ python -m floodforest.cli edges --event melamchi2021 --kml path\to\validation_ed
 
 The validation sampler creates locations and transects for manual flood-edge checking. `edges` imports digitized edges from a KML file; see `data/melamchi2021/validation/how_to_digitise.md` for the expected format and workflow. `dw_gap_check` is an additional Earth Engine diagnostic for the configured Melamchi tile.
 
+## Run the placebo (no-flood control)
+
+The placebo (spec 8.9 and 14.2) runs the same pipeline on two pre-event years with no notable flood. It is built for Melamchi 2021:
+
+```powershell
+python -m floodforest.cli placebo --event melamchi2021
+```
+
+What it does:
+
+- **Checks the period first.** It refuses to run unless `flood_check.status` under the event's `placebo` block in `config.yaml` is `confirmed`. The confirmed interval must also cover the placebo image windows. For Melamchi the interval is 3 Aug 2018 – 15 Dec 2019; see `results/placebo_period_check.md`.
+- **Runs the unchanged pipeline.** It runs `fetch`, `label`, `transects`, `profiles` and `table` on a derived event, `melamchi2021_placebo`. That event uses the real event's centerline, reach, manual exclusions and thresholds, with the placebo image windows. Its fake event date is 2019-06-15.
+- **Keeps its files apart.** Everything goes to `data/melamchi2021_placebo/` and `outputs/melamchi2021_placebo/`. The real event's files are only read.
+- **Reuses downloads.** The first run downloads the placebo rasters, which needs Earth Engine. Later runs reuse them; add `--refetch` to download again.
+- **Writes a report.** `outputs/melamchi2021_placebo/placebo_report/PLACEBO_REPORT.md` compares the placebo with the real event. Alongside it are the CSV tables, the figures and contact sheets of everything the placebo label detected.
+- **Sorts detections for review.** Each detected patch is placed in a diagnostic category: channel margin, floodplain or terrace, or hillslope. The rules are in `placebo_diagnostics` in `config.yaml`. These categories only help a person review the patches. They never decide what counts as flood impact.
+
+**Forest exposure.**
+
+- The primary placebo forest is built from the placebo "pre" window, Oct–Dec 2018, as 14.2 requires.
+- Where Dynamic World has no 2018 image, WorldCover 2020 stands in. This is a placebo-only setting (`worldcover_standin`); the affected rows are flagged, and a sensitivity run leaves them out.
+- The real event's Oct–Dec 2020 forest is shown as a separate sensitivity and is never changed.
+
+A single placebo step can be rerun with the derived key, for example `python -m floodforest.cli label --event melamchi2021_placebo`.
+
+The forest-effect half of the placebo test (β1 not distinguishable from zero) needs the `stats` step, which is not built yet.
+
 ## What a successful run produces
 
 The pipeline caches downloaded inputs and intermediate files under `data/` and writes event results under `outputs/`. For the implemented Melamchi steps, expect:
@@ -114,6 +141,6 @@ The impact labels distinguish impacted, not impacted, and unknown pixels. The ta
 
 ## Current implementation status
 
-The intended full workflow also includes statistical models, placebo analyses, comparisons with independent flood edges, and HTML reports. Those steps are not implemented yet: although the CLI lists `stats`, `placebo`, `report`, and `all`, invoking them currently reports that the step is not built. Fetching is likewise currently restricted to `melamchi2021`; the other event keys are planned/configured but are not yet available for the full run. Do not expect `report.html` or `summary_report.html` from the current implemented pipeline.
+The intended full workflow also includes statistical models and HTML reports. Those steps are not implemented yet: although the CLI lists `stats`, `report`, and `all`, invoking them currently reports that the step is not built. The `placebo` step is built (see above), but without the model part. Fetching is likewise currently restricted to `melamchi2021`; the other event keys are planned/configured but are not yet available for the full run. Do not expect `report.html` or `summary_report.html` from the current implemented pipeline.
 
 For the full analytical specification, event settings, and study limitations, see `CURSOR_BUILD_SPEC.md`, `config.yaml`, and `info.md`.
