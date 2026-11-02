@@ -1,0 +1,14 @@
+{
+  "pair": "2018_2019",
+  "pre": "s2_2018_octdec",
+  "post": "s2_2019_octdec",
+  "t_bsi_post": -0.010077535943165435,
+  "patches_listed": 43,
+  "connected_patches": 13,
+  "connected_area_ha": 1.47,
+  "unconnected_near_line_area_ha": 3.26,
+  "all_new_bare_in_corridor_ha": 32.28,
+  "channel_ha_pre": 193.45,
+  "channel_ha_post": 154.98,
+  "unknown_or_dark_share_of_corridor": 0.045
+}

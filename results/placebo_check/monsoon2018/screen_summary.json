@@ -1,0 +1,14 @@
+{
+  "pair": "monsoon2018",
+  "pre": "s2_2018_marmay",
+  "post": "s2_2018_octdec",
+  "t_bsi_post": 0.014409254163712679,
+  "patches_listed": 223,
+  "connected_patches": 67,
+  "connected_area_ha": 14.21,
+  "unconnected_near_line_area_ha": 37.89,
+  "all_new_bare_in_corridor_ha": 138.49,
+  "channel_ha_pre": 262.7,
+  "channel_ha_post": 193.45,
+  "unknown_or_dark_share_of_corridor": 0.121
+}

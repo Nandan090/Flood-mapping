@@ -236,6 +236,20 @@ events:
       fake_event_date: "2019-06-15"
       s1_pre: { start: "2018-08-03T00:00:00Z", end: "2018-09-15T00:00:00Z" }
       s1_post: { start: "2019-08-03T00:00:00Z", end: "2019-09-15T00:00:00Z" }
+      # Record only (14.2): the user's check that no notable flood hit the
+      # corridor in the placebo interval. Changes no label or placebo setting.
+      flood_check:
+        interval: { start: "2018-08-03", end: "2019-12-15" } # S1 pre start to S2 post end
+        status: confirmed # by the user, 2026-11-02: no notable flood in the interval
+        placebo_pair_review: { compared: "Oct-Dec 2018 vs Oct-Dec 2019", reviewed_by: user,
+                               date: "2026-11-02",
+                               verdict: "no convincing evidence of widespread flood disturbance" }
+        monsoon_2018_review: { compared: "Mar-May 2018 vs Oct-Dec 2018", reviewed_by: user,
+                               date: "2026-11-02", screened_on: "2026-11-02",
+                               claude_reviews: "two (this session; independent session from PNGs)",
+                               claude_verdict: "no convincing evidence of significant flood disturbance",
+                               wayback_check: "patches 16, 29, 31, 59 at 0.5 m (2016-02-01, 2018-11-01, 2019-05-07, 2020-04); no flood deposit; patch 26 has no capture" }
+        record: results/placebo_period_check.md
 
   lende2025:
     name: Lende Khola lake-outburst flood
