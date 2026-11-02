@@ -1,0 +1,24 @@
+check,patch,river_km,side,lat,lon,x,y,reviewer,visual_class,note
+2018_2019,1,0.29,right,28.051414,85.534438,355961.9,3103764.2,claude,ordinary_seasonal_river_change,edge of a bare fan that was already there; mostly before the 2019 monsoon
+2018_2019,2,16.89,left,27.931085,85.555153,357840.2,3090408.0,claude,agricultural,fields bare in the dry season
+2018_2019,3,17.37,left,27.927465,85.553184,357641.7,3090009.3,user,uncertain,user: no clear flood signal
+2018_2019,4,5.51,right,28.010614,85.535461,356008.1,3099242.5,user,uncertain,"user: minor ambiguity, no convincing flood deposit"
+2018_2019,5,20.9,right,27.90026,85.543993,356701.4,3087005.9,user,ordinary_seasonal_river_change,user: no clear flood signal; narrow channel-edge change
+2018_2019,6,20.74,right,27.901741,85.543898,356694.0,3087170.0,user,uncertain,"user: minor ambiguity, no convincing flood deposit"
+monsoon2018,15,11.69,right,27.965567,85.532499,355656.9,3094255.0,claude+independent,ordinary_seasonal_river_change,"thin channel-edge strip, gravel exposure"
+monsoon2018,16,27.98,right,27.846822,85.5542,357636.2,3081073.3,claude+independent+wayback,uncertain,Wayback: roadside clearing/stockpile pad or sand on the bar
+monsoon2018,26,3.29,left,28.028603,85.533006,355790.7,3101238.6,claude+independent,uncertain,gorge; no Wayback capture 2016-2021
+monsoon2018,36,29.7,right,27.836584,85.565594,358745.0,3079925.9,claude+independent,uncertain,channel edge (claude) or field (independent)
+monsoon2018,29,34.36,left,27.806737,85.577254,359855.0,3076605.8,claude+independent+wayback,ordinary_seasonal_river_change,Wayback: small side channel and tracks; minor sand in the side channel not excluded
+monsoon2018,31,33.82,left,27.811541,85.576184,359755.8,3077139.2,claude+independent+wayback,construction_or_gravel_extraction,"Wayback: industrial yard with machinery and stockpiles, 2018-2020"
+monsoon2018,59,33.69,left,27.812487,85.575368,359676.7,3077245.0,claude+independent+wayback,agricultural,Wayback: terraced fields on every date
+monsoon2018,21,1.53,right,28.04314,85.529786,355493.5,3102853.0,claude+independent,landslide_or_gully,hillside gully about 160 m above the river
+monsoon2018,3,21.77,right,27.893121,85.541071,356404.3,3086218.4,claude+independent,agricultural,terraces or valley-floor fields bare after harvest
+monsoon2018,8,25.39,left,27.864651,85.543421,356598.1,3083061.2,claude,agricultural,terraces or valley-floor fields bare after harvest
+monsoon2018,9,32.86,left,27.818377,85.575906,359737.2,3077896.9,claude,agricultural,terraces or valley-floor fields bare after harvest
+monsoon2018,10,25.33,right,27.865106,85.542511,356509.2,3083112.7,claude,agricultural,terraces or valley-floor fields bare after harvest
+monsoon2018,34,21.11,left,27.898375,85.54339,356639.5,3086797.7,claude,agricultural,terraces or valley-floor fields bare after harvest
+monsoon2018,41,25.83,right,27.860874,85.544365,356686.1,3082641.7,claude,agricultural,terraces or valley-floor fields bare after harvest
+monsoon2018,45,20.01,right,27.907512,85.545533,356862.5,3087807.5,claude,agricultural,terraces or valley-floor fields bare after harvest
+monsoon2018,47,31.65,left,27.827884,85.577168,359873.8,3078948.8,claude,agricultural,terraces or valley-floor fields bare after harvest
+monsoon2018,64,23.87,left,27.875285,85.542109,356483.0,3084241.0,claude,agricultural,terraces or valley-floor fields bare after harvest
