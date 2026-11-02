@@ -355,11 +355,11 @@ def assert_time_separation(provenance: dict, event) -> None:
 def load_layers(event_key: str, cfg) -> tuple[dict, dict]:
     """Rasters sampled along the transects, all on the analysis grid."""
     from . import optical
-    from .config import PROJECT_ROOT
+    from .config import PROJECT_ROOT, rasters_dir
     from .label import _read_named
     from .sar import terrain_slope_aspect
 
-    rasters = PROJECT_ROOT / cfg.paths.data / event_key / "rasters"
+    rasters = rasters_dir(cfg, event_key)
     label_dir = PROJECT_ROOT / cfg.paths.outputs / event_key / "label"
     post, grid = _read_named(rasters / "s2_post.tif", ("B4", "B8"), cfg.crs)
     layers = {"ndvi_post": optical.ndvi(post["B8"], post["B4"])}
@@ -382,10 +382,11 @@ def run_profiles(event_key: str, config_path: str | Path | None = None) -> list[
     import pandas as pd
 
     from .centerline import _sample
-    from .config import PROJECT_ROOT, load_config
+    from .config import PROJECT_ROOT, effective_config, load_config
 
     cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
     event = getattr(cfg.events, event_key)
+    cfg = effective_config(cfg, event_key)
     prov_path = PROJECT_ROOT / cfg.paths.outputs / event_key / "provenance.json"
     if not prov_path.exists():
         raise FileNotFoundError(f"{prov_path} is missing. Run fetch first.")

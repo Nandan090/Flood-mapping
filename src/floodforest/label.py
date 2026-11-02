@@ -19,7 +19,7 @@ from scipy import ndimage
 from scipy.spatial import cKDTree
 
 from . import optical, sar, sheets
-from .config import PROJECT_ROOT, load_config
+from .config import PROJECT_ROOT, effective_config, load_config, rasters_dir
 from .geometry import chaikin, densify, normals, stations
 from .profiles import centre_channel
 from .qa import line_samples
@@ -33,7 +33,8 @@ LABELS = ("combined", "optical_only", "sar_only", "sar_strict", "sar_near")
 def run_label(event_key: str, config_path: str | Path | None = None) -> list[Path]:
     cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
     event = getattr(cfg.events, event_key)
-    rasters = PROJECT_ROOT / cfg.paths.data / event_key / "rasters"
+    cfg = effective_config(cfg, event_key)
+    rasters = rasters_dir(cfg, event_key)
     prov_path = PROJECT_ROOT / cfg.paths.outputs / event_key / "provenance.json"
     if not prov_path.exists():
         raise FileNotFoundError(f"{prov_path} is missing. Run fetch first.")
@@ -61,8 +62,12 @@ def run_label(event_key: str, config_path: str | Path | None = None) -> list[Pat
             f"{cfg.channel_seed_max_m} m of the centerline. No other mask was used.")
     ndvi_post = optical.ndvi(post["B8"], post["B4"])
     bsi_post = optical.bsi(post["B2"], post["B4"], post["B8"], post["B11"])
-    t_bsi = _frozen_t_bsi(provenance, optical.t_bsi_from_channel(
+    t_bsi_frozen = _frozen_t_bsi(provenance, optical.t_bsi_from_channel(
         bsi_post, channel, cfg.bsi_percentile))
+    # The 8.8 threshold sensitivity scales the frozen value; the primary factor is 1.
+    t_bsi = t_bsi_frozen * float(cfg.t_bsi_factor)
+    if cfg.t_bsi_factor != 1:
+        print(f"t_bsi sensitivity: frozen {t_bsi_frozen:.4f} x {cfg.t_bsi_factor:g} = {t_bsi:.4f}")
     dark = optical.dark_mask(pre["B8"], post["B8"], channel, cfg.dark_b8_threshold) & corridor
     optical_raw = optical.optical_impact(
         ndvi_pre, ndvi_post, bsi_post, channel, t_bsi,
@@ -124,8 +129,11 @@ def run_label(event_key: str, config_path: str | Path | None = None) -> list[Pat
     radar_only = _radar_only_breakdown(source, slope, forest, corridor, cfg, pixel_m)
     _print_exclusions(exclusions, event)
 
-    provenance["label"] = _label_record(cfg, t_bsi, channel, resolved, primary,
+    provenance["label"] = _label_record(cfg, t_bsi_frozen, channel, resolved, primary,
                                         near, orbit_geometry, written)
+    provenance["label"]["t_bsi_factor"] = float(cfg.t_bsi_factor)
+    provenance["label"]["t_bsi_used"] = t_bsi
+    provenance["label"]["sar_z_threshold_used"] = float(cfg.sar_z_threshold)
     provenance["label"]["dark_pixels"] = int(dark.sum())
     provenance["label"]["dark_rule"] = (
         f"B8 < {cfg.dark_b8_threshold} in the pre or post composite, outside "
@@ -380,7 +388,7 @@ def _frozen_t_bsi(provenance: dict, computed: float) -> float:
 
 def _stations(line, cfg) -> list[dict]:
     smooth = densify(chaikin(np.asarray(line.coords), 3), cfg.grid_m)
-    return stations(smooth, cfg.station_spacing_m)
+    return stations(smooth, cfg.station_spacing_m, start_m=cfg.station_offset_m)
 
 
 def _station_z0(station: dict, channel, dem, grid, cfg) -> dict:
@@ -673,7 +681,8 @@ def redraw_combined_sheets(event_key: str, config_path: str | Path | None = None
     """
     cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
     event = getattr(cfg.events, event_key)
-    rasters = PROJECT_ROOT / cfg.paths.data / event_key / "rasters"
+    cfg = effective_config(cfg, event_key)
+    rasters = rasters_dir(cfg, event_key)
     out_dir = PROJECT_ROOT / cfg.paths.outputs / event_key / "label"
     _, samples, river_m = line_samples(event, cfg)
     pre, grid = _read_named(rasters / "s2_pre.tif", _S2_BANDS, cfg.crs)

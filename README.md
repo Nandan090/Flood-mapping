@@ -124,7 +124,35 @@ What it does:
 
 A single placebo step can be rerun with the derived key, for example `python -m floodforest.cli label --event melamchi2021_placebo`.
 
-The forest-effect half of the placebo test (β1 not distinguishable from zero) needs the `stats` step, which is not built yet.
+The forest-effect half of the placebo test (β1 not distinguishable from zero) is fitted by the `stats` step (below), once the placebo has run.
+
+## Run the statistics
+
+```powershell
+python -m floodforest.cli stats --event melamchi2021
+```
+
+`stats` fits the spec's section 8 models to the table, and writes everything to `outputs/melamchi2021/stats/`. What it computes:
+
+- **Model A (8.2):** the between-transect model. It includes `river_section` (14.16), `channel_resolved` (14.18) and a `valley_wall_found` indicator. Where no valley wall was found, wall slope is set to 0 and the indicator records it.
+- **Model B (8.3):** the paired-bank model. It is never trimmed (14.8).
+- **Common-support trimming (8.1, 14.8):** applied to Model A only.
+- **Intervals:**
+  - The primary interval is the wild cluster bootstrap-t (14.15). The report gives p(0) and the interval.
+  - The 1 km percentile interval is shown beside it, labelled as too narrow with few segments.
+  - The logistic model uses a cluster-robust t interval.
+- **Censored model (14.7):** a Weibull AFT on rows with reach > 0.
+- **Effect sizes and E-values (8.6, 8.7, 14.9).**
+- **Every sensitivity run from 8.8 and section 14:**
+  - Most are refits of the existing table.
+  - Station spacing 50 m, the 50 m station offset (14.22), and t_bsi and SAR z ±20% need the steps from label to table rebuilt. These rebuilds are the derived events `melamchi2021__<variant>`. They reuse the real event's downloaded rasters and write to `outputs/melamchi2021__<variant>/`. They are built on the first run and cached afterwards; add `--rebuild` to force a rebuild.
+- **The placebo:** run through the same models, in three variants:
+  - kept rows (primary)
+  - with the 14.20 assumed-zero rows added; this variant pushes toward the null by construction
+  - with the 2020 forest
+- **The verdict (8.10, 14.10).**
+
+The report is `STATS_REPORT.md`, with `stats_results.csv` (every run and outcome), `stats_summary.json` and the figures.
 
 ## What a successful run produces
 
@@ -141,6 +169,6 @@ The impact labels distinguish impacted, not impacted, and unknown pixels. The ta
 
 ## Current implementation status
 
-The intended full workflow also includes statistical models and HTML reports. Those steps are not implemented yet: although the CLI lists `stats`, `report`, and `all`, invoking them currently reports that the step is not built. The `placebo` step is built (see above), but without the model part. Fetching is likewise currently restricted to `melamchi2021`; the other event keys are planned/configured but are not yet available for the full run. Do not expect `report.html` or `summary_report.html` from the current implemented pipeline.
+The intended full workflow also includes HTML reports. Those steps are not implemented yet: although the CLI lists `report` and `all`, invoking them currently reports that the step is not built. The `stats` step fits the placebo's models; the `placebo` step builds the placebo table and its descriptive report. Fetching is likewise currently restricted to `melamchi2021`; the other event keys are planned/configured but are not yet available for the full run. Do not expect `report.html` or `summary_report.html` from the current implemented pipeline.
 
 For the full analytical specification, event settings, and study limitations, see `CURSOR_BUILD_SPEC.md`, `config.yaml`, and `info.md`.

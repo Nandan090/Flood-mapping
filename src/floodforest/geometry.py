@@ -70,16 +70,17 @@ def _point_at(points: np.ndarray, cum: np.ndarray, distance: float) -> np.ndarra
 
 
 def stations(points: np.ndarray, spacing_m: float,
-             direction_offset_m: float = 100.0) -> list[dict]:
+             direction_offset_m: float = 100.0, start_m: float = 0.0) -> list[dict]:
     """Stations every spacing_m along the line, upstream to downstream.
 
     river_km is the distance downstream from the start in kilometres.
-    segment_id is floor(river_km), giving 1 km blocks.
+    segment_id is floor(river_km), giving 1 km blocks. start_m places the
+    first station that far downstream (0 in the primary run; 14.22 shifts it).
     """
     pts = np.asarray(points, dtype=float)
     cum = _cumulative(pts)
     out = []
-    distance = 0.0
+    distance = float(start_m)
     while distance <= cum[-1] + 1e-9:
         here = _point_at(pts, cum, min(distance, cum[-1]))
         ahead = _point_at(pts, cum, min(distance + direction_offset_m, cum[-1]))

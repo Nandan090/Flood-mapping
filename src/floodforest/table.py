@@ -101,8 +101,12 @@ def run_table(event_key: str, config_path: str | Path | None = None) -> list[Pat
     from .qa import line_samples
     from .stats import winsorise_upper
 
+    from .config import effective_config, rasters_dir
+
     cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
     event = getattr(cfg.events, event_key)
+    cfg = effective_config(cfg, event_key)
+    rasters = rasters_dir(cfg, event_key)
     if not getattr(event, "manual_exclusions_confirmed_on", None):
         raise RuntimeError(
             f"manual_exclusions_confirmed_on is not set for {event_key}. The user "
@@ -137,8 +141,7 @@ def run_table(event_key: str, config_path: str | Path | None = None) -> list[Pat
 
     # Exposure belts (7.3), cut at the usable length (14.21).
     layers, grid = load_layers(event_key, cfg)
-    pre_grid = _read_named(PROJECT_ROOT / cfg.paths.data / event_key / "rasters" / "s2_pre.tif",
-                           ("B4",), cfg.crs)[1]
+    pre_grid = _read_named(rasters / "s2_pre.tif", ("B4",), cfg.crs)[1]
     if pre_grid["transform"] != grid["transform"]:
         raise RuntimeError("s2_pre and s2_post are not on the same grid.")
     forest = exposure.forest_layers(event_key, cfg, provenance, grid)
@@ -176,8 +179,7 @@ def run_table(event_key: str, config_path: str | Path | None = None) -> list[Pat
                                           cfg.curvature_window_m)
     df["curvature"] = df["station_id"].map(dict(zip(stations.index, curvature)))
     df["outer_bend"] = controls.outer_bend(df["curvature"].to_numpy(), df["side"].to_numpy())
-    upa = _read_named(PROJECT_ROOT / cfg.paths.data / event_key / "rasters" / "merit_upa.tif",
-                      ("upa",), cfg.crs, grid)[0]["upa"]
+    upa = _read_named(rasters / "merit_upa.tif", ("upa",), cfg.crs, grid)[0]["upa"]
     upa_max = controls.max_within(upa, grid["transform"],
                                   stations[["station_x", "station_y"]].to_numpy(float),
                                   cfg.upa_window_m)

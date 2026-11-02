@@ -58,19 +58,230 @@ def enough_blocks(n_blocks: int, min_blocks: int) -> bool:
 
 
 def model_a_rhs(forest: str = "forest_frac", spline_df: int = 5,
-                with_sections: bool = False) -> str:
+                with_sections: bool = False, extra_terms: tuple = ()) -> str:
     """Right-hand side of Model A (8.2), with river_section when needed (14.16).
 
     river_section enters as a fixed effect only when the reach has at least
-    one confirmed section break; Model B never includes it.
+    one confirmed section break; Model B never includes it. extra_terms adds
+    the indicators the run uses (channel_resolved, 14.18; valley_wall_found,
+    user decision on missing wall slope).
     """
     rhs = (f"{forest} + np.log(channel_width_m) + gradient"
            " + np.log(valley_width_m) + wall_slope_deg + bank_slope_deg"
            " + log10_upa + outer_bend + curvature + bank_elev_m + C(side)"
            f" + cr(river_km, df={spline_df})")
+    for term in extra_terms:
+        rhs += f" + {term}"
     if with_sections:
         rhs += " + C(river_section)"
     return rhs
+
+
+# Model B differences (8.3): valley width, wall slope, bank slope, outer bend, plus the
+# valley-wall indicator that goes with the 0-filled wall slope (user decision).
+MODEL_B_DIFFS = ("valley_width_m", "wall_slope_deg", "valley_wall_found", "bank_slope_deg",
+                 "outer_bend")
+MODEL_A_EXTRA = ("valley_wall_found", "channel_resolved")
+MODEL_COLUMNS = ("forest_frac", "channel_width_m", "gradient", "valley_width_m",
+                 "wall_slope_deg", "valley_wall_found", "bank_slope_deg", "log10_upa",
+                 "outer_bend", "curvature", "bank_elev_m", "channel_resolved", "river_km",
+                 "river_section", "side", "block_id", "segment_id", "station_id")
+
+
+def model_frame(table: pd.DataFrame, forest_col: str, dem: str = "fab",
+                outcome_cols: dict | None = None) -> pd.DataFrame:
+    """Model columns with standard names (8.2) for the rows given.
+
+    Wall slope is 0 where no valley wall was found and valley_wall_found carries
+    that (user decision). Rows missing any other model value are dropped and
+    counted in .attrs["dropped_missing"].
+    """
+    outcome_cols = outcome_cols or {
+        "y_height": f"reach_height_m_{dem}", "y_dist": f"reach_distance_m_{dem}",
+        "y_over": f"overtopped_{dem}", "censored": f"censored_{dem}"}
+    t = table
+    wall_found = pd.to_numeric(t[f"valley_wall_found_{dem}"], errors="coerce")
+    out = pd.DataFrame({
+        "station_id": t["station_id"], "side": t["side"], "river_km": t["river_km"],
+        "segment_id": t["segment_id"], "block_id": t["block_id"],
+        "river_section": t["river_section"], "channel_resolved": t["channel_resolved"],
+        "forest_frac": pd.to_numeric(t[forest_col], errors="coerce"),
+        "channel_width_m": t["channel_width_m"], "gradient": t[f"gradient_{dem}"],
+        "valley_width_m": t[f"valley_width_m_{dem}"],
+        "wall_slope_deg": np.where(wall_found == 1, t[f"wall_slope_deg_{dem}"], 0.0),
+        "valley_wall_found": wall_found,
+        "bank_slope_deg": t[f"bank_slope_deg_{dem}"], "log10_upa": t["log10_upa"],
+        "outer_bend": t["outer_bend"], "curvature": t["curvature"],
+        "bank_elev_m": t[f"bank_elev_m_{dem}"],
+    }, index=t.index)
+    for name, col in outcome_cols.items():
+        out[name] = pd.to_numeric(t[col], errors="coerce")
+    out["y_logdist"] = np.log1p(out["y_dist"])
+    needed = list(MODEL_COLUMNS) + ["y_height", "y_dist", "y_over"]
+    ok = out[needed].notna().all(axis=1)
+    out = out[ok].copy()
+    out.attrs["dropped_missing"] = int((~ok).sum())
+    return out
+
+
+def common_support(df: pd.DataFrame, controls_rhs: str, threshold: float,
+                   min_share: float, min_row_fraction: float,
+                   min_segments: int) -> dict:
+    """Overlap trimming (8.1 with 14.8). Model A only; Model B is never trimmed.
+
+    forest_high = F >= threshold, or F >= median(F) when either group has fewer
+    than min_share of the rows. A logistic regression of forest_high on the
+    controls gives p; rows with p inside the overlap of the two groups' ranges
+    are kept. Too few rows or segments left means the comparison is too thin.
+    """
+    f = df["forest_frac"]
+    split, rule = threshold, f"F >= {threshold:g}"
+    high = f >= split
+    if min(high.mean(), 1 - high.mean()) < min_share:
+        split = float(f.median())
+        rule = f"F >= median {split:.3f} (the {threshold:g} split left a group under {min_share:.0%})"
+        high = f >= split
+    if high.all() or not high.any():
+        raise RuntimeError("Common support: one forest group is empty.")
+    data = df.assign(forest_high=high.astype(int))
+    model = smf.logit(f"forest_high ~ {controls_rhs}", data=data).fit(disp=0, maxiter=200)
+    p = pd.Series(model.predict(data), index=df.index)
+    lo = max(p[high].min(), p[~high].min())
+    hi = min(p[high].max(), p[~high].max())
+    keep = (p >= lo) & (p <= hi)
+    kept_segments = int(df.loc[keep, "segment_id"].nunique())
+    too_thin = bool(keep.mean() < min_row_fraction or kept_segments < min_segments)
+    return {"rule": rule, "split": split, "p": p, "high": high, "keep": keep,
+            "bounds": (float(lo), float(hi)), "rows": int(len(df)), "kept": int(keep.sum()),
+            "dropped": int((~keep).sum()), "kept_segments": kept_segments,
+            "too_thin": too_thin}
+
+
+def paired_frame(df: pd.DataFrame, outcomes=("y_height", "y_logdist", "y_over")) -> pd.DataFrame:
+    """Model B rows (8.3): left minus right at stations where both banks are in df."""
+    left = df[df.side == "left"].set_index("station_id")
+    right = df[df.side == "right"].set_index("station_id")
+    both = left.index.intersection(right.index)
+    left, right = left.loc[both], right.loc[both]
+    out = pd.DataFrame({"station_id": both, "block_id": left["block_id"].to_numpy(),
+                        "segment_id": left["segment_id"].to_numpy(),
+                        "river_section": left["river_section"].to_numpy(),
+                        "d_forest": (left.forest_frac - right.forest_frac).to_numpy()})
+    for name in MODEL_B_DIFFS:
+        out[f"d_{name}"] = (left[name] - right[name]).to_numpy()
+    for name in outcomes:
+        out[f"d_{name}"] = (left[name] - right[name]).to_numpy()
+    return out
+
+
+def model_b_rhs() -> str:
+    return "d_forest + " + " + ".join(f"d_{n}" for n in MODEL_B_DIFFS)
+
+
+def model_b_informative(pairs: pd.DataFrame, min_stations: int, min_diff: float) -> dict:
+    """14.8: Model B is uninformative if fewer than min_stations have |F_L - F_R| >= min_diff."""
+    n = int((pairs["d_forest"].abs() >= min_diff).sum())
+    return {"stations": int(len(pairs)), "stations_large_diff": n,
+            "informative": n >= min_stations,
+            "abs_diff_quantiles": pairs["d_forest"].abs().quantile([0.25, 0.5, 0.75]).round(3).tolist()}
+
+
+def aft_conditional(df: pd.DataFrame, outcome: str, rhs: str, term: str = "forest_frac") -> dict:
+    """14.7 part 2: Weibull AFT on rows with reach > 0, right-censored where censored = 1.
+
+    A sensitivity conditional on overtopping, not a headline result. Rows with a
+    zero value of the outcome (a reach whose edge is not above z0) cannot enter a
+    log-time model and are counted, not shifted (no constants are added to zeros).
+    """
+    from lifelines import WeibullAFTFitter
+
+    rows = df[df["y_dist"] > 0]
+    zero = int((rows[outcome] <= 0).sum())
+    rows = rows[rows[outcome] > 0]
+    x = patsy.dmatrix(rhs, rows, return_type="dataframe").drop(columns="Intercept")
+    names = {c: f"x{i}" for i, c in enumerate(x.columns)}
+    data = x.rename(columns=names)
+    data = data.loc[:, data.std() > 0]
+    data["T"] = rows.loc[data.index, outcome].to_numpy(float)
+    data["E"] = 1 - rows.loc[data.index, "censored"].to_numpy(float)
+    fit = WeibullAFTFitter().fit(data, duration_col="T", event_col="E", robust=True)
+    s = fit.summary.loc[("lambda_", names[term])]
+    return {"method": "Weibull AFT, right-censored, robust (not cluster) SE; conditional on reach > 0",
+            "beta_log_time": float(s["coef"]), "time_ratio": float(np.exp(s["coef"])),
+            "ci_time_ratio": (float(np.exp(s["coef lower 95%"])), float(np.exp(s["coef upper 95%"]))),
+            "p": float(s["p"]), "rows": int(len(data)), "censored": int((data["E"] == 0).sum()),
+            "zero_outcome_rows_left_out": zero}
+
+
+def effect_sizes(df: pd.DataFrame, result: dict, forest_col: str = "forest_frac") -> dict:
+    """8.6: beta for 0 -> 100 % forest and per interquartile range of F, with the interval."""
+    q25, q75 = df[forest_col].quantile([0.25, 0.75])
+    iqr = float(q75 - q25)
+    lo, hi = result["interval"]
+    return {"effect_0_to_100": result["beta"], "interval_0_to_100": (lo, hi), "iqr_F": iqr,
+            "effect_per_iqr": result["beta"] * iqr, "interval_per_iqr": (lo * iqr, hi * iqr)}
+
+
+def evalue_for(result: dict, sd_y: float) -> dict:
+    """8.7 E-value for an OLS result, using the interval limit nearest the null."""
+    lo, hi = result["interval"]
+    nearest = 0.0 if lo <= 0 <= hi else (lo if abs(lo) < abs(hi) else hi)
+    return evalue_continuous(result["beta"], sd_y, nearest)
+
+
+def evalue_logistic(result: dict, prevalence: float, cutoff: float) -> dict:
+    """14.9 E-value for overtopped, and for the OR limit nearest 1 (1 if the interval spans 1)."""
+    lo, hi = result["or_interval"]
+    point = evalue_binary(result["odds_ratio"], prevalence, cutoff)
+    if lo <= 1 <= hi:
+        ci = 1.0
+    else:
+        ci = evalue_binary(lo if lo > 1 else hi, prevalence, cutoff)
+    return {"evalue": point, "evalue_ci": ci}
+
+
+def or_narrow(or_interval: tuple[float, float], low: float, high: float) -> bool:
+    """14.10: the whole odds-ratio interval lies within [low, high]."""
+    return low <= or_interval[0] and or_interval[1] <= high
+
+
+def decide_verdict(checks: dict) -> tuple[str, list[str]]:
+    """The fixed decision rule (8.10) with the caps from 14.8, 14.13 and 14.15.
+
+    checks holds booleans and short notes prepared by the runner:
+      a_height_neg_sig, b_height_neg_sig, dist_same_sign, labels_same_sign,
+      dems_same_sign, placebo_null, validation_ok, enough_blocks, overlap_ok,
+      model_b_informative, validated, all_include_null, all_narrow.
+    """
+    caps = []
+    if not checks["enough_blocks"]:
+        caps.append("fewer blocks than the minimum (14.15)")
+    if not checks["overlap_ok"]:
+        caps.append("overlap too thin (8.1)")
+    if not checks["model_b_informative"]:
+        caps.append("Model B uninformative (14.8)")
+    if not checks["validated"]:
+        caps.append("not validated (14.13)")
+    if not checks["placebo_null"]:
+        caps.append("placebo not null (8.9): the main result cannot be trusted")
+    protective = [
+        ("Model A reach height: beta < 0, interval excludes 0", checks["a_height_neg_sig"]),
+        ("Model B reach height: beta < 0, interval excludes 0", checks["b_height_neg_sig"]),
+        ("reach distance: same sign in Model A and B", checks["dist_same_sign"]),
+        ("same sign under optical-only and radar-only labels", checks["labels_same_sign"]),
+        ("same sign under both DEMs", checks["dems_same_sign"]),
+        ("placebo null", checks["placebo_null"]),
+        ("validation omission not materially higher on forested banks", checks["validation_ok"]),
+    ]
+    failed = [name for name, ok in protective if not ok]
+    if not caps and not failed:
+        return "Consistent with a protective association", []
+    if not caps and checks["all_include_null"] and checks["all_narrow"]:
+        return "No evidence of association", []
+    reasons = caps + [f"not met: {name}" for name in failed]
+    if checks["all_include_null"] and not checks["all_narrow"]:
+        reasons.append("intervals include the null but are not reasonably narrow (14.10)")
+    return "Inconclusive", reasons
 
 
 def fit_model_a(table: pd.DataFrame, outcome: str, formula_rhs: str):

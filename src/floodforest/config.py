@@ -106,6 +106,75 @@ def _add_placebo_events(cfg) -> None:
     for key, event in list(vars(events).items()):
         if hasattr(event, "placebo"):
             setattr(events, placebo_key(key), derive_placebo_event(event, key))
+    for key, event in list(vars(events).items()):
+        if not getattr(event, "is_placebo", False):
+            for name, (label, overrides) in rebuild_variants(cfg).items():
+                setattr(events, variant_key(key, name),
+                        derive_variant_event(event, key, name, label, overrides))
+
+
+VARIANT_SEP = "__"
+
+
+def variant_key(event_key: str, name: str) -> str:
+    return f"{event_key}{VARIANT_SEP}{name}"
+
+
+def rebuild_variants(cfg) -> dict:
+    """Sensitivity runs that need the label-to-table steps rebuilt (8.8, 14.22).
+
+    name -> (description, config overrides). Values come from config.yaml.
+    """
+    f = float(cfg.label_threshold_sensitivity)
+    z = float(cfg.sar_z_threshold)
+    spacing = cfg.station_spacing_sensitivity_m
+    offset = cfg.station_offset_sensitivity_m
+    return {
+        f"spacing{spacing:g}": (f"station spacing {spacing:g} m (8.8)",
+                                {"station_spacing_m": spacing}),
+        f"offset{offset:g}": (f"stations shifted {offset:g} m downstream (14.22)",
+                              {"station_offset_m": offset}),
+        "tbsi_minus20": (f"t_bsi x {1 - f:g} (8.8)", {"t_bsi_factor": 1 - f}),
+        "tbsi_plus20": (f"t_bsi x {1 + f:g} (8.8)", {"t_bsi_factor": 1 + f}),
+        "sarz_minus20": (f"SAR z threshold {round(z * (1 - f), 6):g} (8.8)",
+                         {"sar_z_threshold": round(z * (1 - f), 6)}),
+        "sarz_plus20": (f"SAR z threshold {round(z * (1 + f), 6):g} (8.8)",
+                        {"sar_z_threshold": round(z * (1 + f), 6)}),
+    }
+
+
+def derive_variant_event(event: SimpleNamespace, event_key: str, name: str, label: str,
+                         overrides: dict) -> SimpleNamespace:
+    """A sensitivity rebuild of one event: same event, a few config values changed,
+    the real event's downloaded rasters, its own outputs folder."""
+    out = SimpleNamespace(**{k: v for k, v in vars(event).items() if k != "placebo"})
+    out.base_event = event_key
+    out.data_from = event_key
+    out.is_variant = True
+    out.variant_name = name
+    out.variant_label = label
+    out.cfg_overrides = dict(overrides)
+    return out
+
+
+def effective_config(cfg, event_key: str):
+    """cfg with the event's sensitivity overrides applied (a copy; cfg is unchanged)."""
+    event = getattr(cfg.events, event_key)
+    overrides = getattr(event, "cfg_overrides", None)
+    if not overrides:
+        return cfg
+    out = SimpleNamespace(**vars(cfg))
+    for name, value in overrides.items():
+        if not hasattr(cfg, name):
+            raise KeyError(f"Override {name} is not a config.yaml setting.")
+        setattr(out, name, value)
+    return out
+
+
+def rasters_dir(cfg, event_key: str) -> Path:
+    """Downloaded rasters of an event; a rebuild variant reads its real event's."""
+    event = getattr(cfg.events, event_key)
+    return PROJECT_ROOT / cfg.paths.data / getattr(event, "data_from", event_key) / "rasters"
 
 
 def parse_utc(timestamp: str) -> datetime:

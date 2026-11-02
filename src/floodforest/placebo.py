@@ -581,7 +581,8 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
         "",
         "Expected with no flood (8.9): near-zero reach. The spec sets no numeric pass mark for "
         "'near-zero', so the placebo is shown beside the real event. The second part of 8.9 "
-        "(beta1 not distinguishable from zero) needs the `stats` step, which is not built yet.",
+        "(beta1 not distinguishable from zero) is fitted by the `stats` step through the same "
+        f"Model A and Model B code as the real event: see `outputs/{event_key}/stats/STATS_REPORT.md`.",
         "",
         "| Analysis set, combined label, FABDEM | Placebo 2018-19 | Real event 2021 |",
         "|---|---:|---:|",
@@ -676,6 +677,18 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
             f"forest fraction of those rows {_fmt(nv[f'forest_frac_{cfg.belt_width_m}'].mean())} "
             f"vs {_fmt(kept[f'forest_frac_{cfg.belt_width_m}'].mean())} in the analysis set. "
             f"River km: {km_ranges(km, cfg.station_spacing_m)}.")
+    inr = plac[plac.in_reach == 1].copy()
+    inr["tercile"] = forest_terciles(inr[f"forest_frac_{cfg.belt_width_m}"])
+    nv_t = inr.exclude_reasons.fillna("").str.contains("river_not_visible").groupby(inr.tercile)
+    share, count, total = nv_t.mean(), nv_t.sum(), inr.groupby("tercile").size()
+    lines += [
+        "",
+        f"The placebo drops {share['High']:.0%} of High-forest rows for river_not_visible "
+        f"({int(count['High'])} of {int(total['High'])}), against {share['Low']:.0%} of Low-forest "
+        f"rows ({int(count['Low'])} of {int(total['Low'])}); Mid {share['Mid']:.0%} (terciles of "
+        "the 2018 forest over all in-reach rows). The placebo therefore cannot speak for the "
+        "densest forest.",
+    ]
     lines += [
         "",
         "Rule 14.20 keeps a row only if bare or impacted ground within 30 m of the station shows "
@@ -707,7 +720,7 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
         "- Stand-in analysis rows per 2018 forest tercile: "
         + ", ".join(f"{t} {n}" for t, n in standin_by_tercile.items()),
         "",
-        "Descriptive only; no model is fitted (the `stats` step is not built). Terciles are "
+        "Descriptive only; the models are in the `stats` report. Terciles are "
         "equal-count groups of the analysis set; ties (many rows have no forest) are split by "
         "station order. With so few overtopped rows, differences between terciles are a few "
         "rows and should not be read as a trend.",
@@ -733,7 +746,8 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
         "",
         "- The placebo shows how much impact the method finds when no notable flood occurred. It does "
         "not prove that no local flood, high flow or bank erosion happened in the period.",
-        "- The forest-effect half of the placebo test (beta1, 8.9) waits for the `stats` step.",
+        "- The forest-effect half of the placebo test (beta1, 8.9) is in the `stats` report; "
+        "it covers only rows whose river was visible, which leaves out much of the densest forest.",
         "- Diagnostic categories use 10 m imagery and a 30 m DEM; they are review aids, not causes. "
         "Visual reviews exist only for the spots in the review file.",
         "- The placebo forest uses ETH canopy height 2020 (after the placebo period) and, where "

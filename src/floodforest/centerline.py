@@ -529,19 +529,22 @@ def run_transects(event_key: str, config_path: str | Path | None = None) -> Path
     from .qa import line_samples
     from .stats import block_ids
 
+    from .config import effective_config, rasters_dir
+
     cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
     event = getattr(cfg.events, event_key)
+    cfg = effective_config(cfg, event_key)
     river, samples, river_m = line_samples(event, cfg)
     smooth_pts = densify(chaikin(np.asarray(river.coords), 3), cfg.grid_m)
     smooth_length = float(np.linalg.norm(np.diff(smooth_pts, axis=0), axis=1).sum())
-    station_list = stations(smooth_pts, cfg.station_spacing_m)
+    station_list = stations(smooth_pts, cfg.station_spacing_m, start_m=cfg.station_offset_m)
     xy = np.array([[s["x"], s["y"]] for s in station_list])
     km = station_river_km(xy, river)
     for station, dist_m in zip(station_list, km * 1000.0):
         station["dx"], station["dy"] = verified_direction(
             river, float(dist_m), cfg.normal_baseline_m)
 
-    rasters = PROJECT_ROOT / cfg.paths.data / event_key / "rasters"
+    rasters = rasters_dir(cfg, event_key)
     post, grid = _read_bands(rasters / "s2_post.tif", ("B2", "B3", "B4"), cfg.crs)
     dem = _read_bands(rasters / "fabdem.tif", ("elevation_m",), cfg.crs, grid)[0]["elevation_m"]
     upa_grid = _read_bands(rasters / "merit_upa.tif", ("upa",), cfg.crs, grid)[0]["upa"]

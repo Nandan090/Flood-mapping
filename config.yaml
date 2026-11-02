@@ -50,6 +50,9 @@ paths:
 # ---------------------------------------------------------------------------
 station_spacing_m: 100
 station_spacing_sensitivity_m: 50
+station_offset_m: 0 # primary: the first station sits at the start of the line
+station_offset_sensitivity_m: 50 # 14.22: all stations shifted this far downstream (sensitivity only)
+t_bsi_factor: 1.0 # primary: the frozen t_bsi; the 8.8 threshold sensitivity multiplies it
 max_half_length_m: 1500
 normal_baseline_m: 250 # direction: this far up and downstream on the verified line (14.21)
 neighbour_search_m: 1000 # same-bank transects considered for usable length (14.21)

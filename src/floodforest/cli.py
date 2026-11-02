@@ -1,8 +1,8 @@
 """Command line entry point.
 
-Built so far: fetch, label, transects, profiles, table, placebo, the
+Built so far: fetch, label, transects, profiles, table, stats, placebo, the
 validation sampler, the validation-edge KML converter, compare and
-qa_centerline. stats, report and all are not built.
+qa_centerline. report and all are not built.
 """
 
 from __future__ import annotations
@@ -25,6 +25,9 @@ def main(argv: list[str] | None = None) -> int:
                              "step itself takes the real event key.")
     parser.add_argument("--refetch", action="store_true",
                         help="placebo: download the placebo rasters again.")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="stats: rebuild the sensitivity variants (spacing, offset, "
+                             "label thresholds) even when cached.")
     parser.add_argument("--only", action="append", default=None,
                         choices=["s1_pre", "copernicus_dem", "s1_near",
                                  "s1_geometry"],
@@ -40,6 +43,12 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--kml applies to edges.")
     if args.refetch and args.step != "placebo":
         raise SystemExit("--refetch applies to placebo.")
+    if args.rebuild and args.step != "stats":
+        raise SystemExit("--rebuild applies to stats.")
+    if args.step == "stats":
+        from .stats_run import run_stats
+        run_stats(args.event, rebuild=args.rebuild)
+        return 0
     if args.step == "placebo":
         from .placebo import run_placebo
         run_placebo(args.event, refetch=args.refetch)

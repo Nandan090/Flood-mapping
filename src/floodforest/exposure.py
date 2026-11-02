@@ -247,10 +247,10 @@ def check_worldcover_year(provenance: dict) -> None:
 def forest_layers(event_key: str, cfg, provenance: dict, grid: dict) -> dict:
     """Pre-event exposure grids for the belts (7.3, 14.3, 14.14)."""
     from . import optical
-    from .config import PROJECT_ROOT
+    from .config import rasters_dir
     from .label import _read_named
 
-    rasters = PROJECT_ROOT / cfg.paths.data / event_key / "rasters"
+    rasters = rasters_dir(cfg, event_key)
     trees = _read_named(rasters / "dynamic_world_trees_pre.tif", ("trees",),
                         cfg.crs, grid)[0]["trees"]
     height = _read_named(rasters / "canopy_height.tif", ("canopy_height_m",),
