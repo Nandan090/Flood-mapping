@@ -253,6 +253,9 @@ def draft_centerline(event_key: str, config_path: str | Path | None = None) -> P
         tuple(event.osm_bbox), tags={"waterway": ["river", "stream"]})
     print(f"OpenStreetMap waterways in the search box: {len(waterways)}")
 
+    if getattr(start, "rule", "flat") == "fixed_point":
+        return _draft_from_fixed_start(cfg, event, event_key, waterways, to_utm, to_ll, out)
+
     main = _as_one_line(_to_metres(_named(waterways, event.rivers[0]), to_utm),
                         event.rivers[0])
     main = _orient_downstream(main, to_ll)
@@ -285,7 +288,8 @@ def draft_centerline(event_key: str, config_path: str | Path | None = None) -> P
     junction_pt = joined.interpolate(junction_m)
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    _write_geojson(out, to_ll, reach, flat_pt, start_pt, junction_pt, {
+    _write_geojson(out, to_ll, reach, [("flat_downstream_end", flat_pt), ("start", start_pt),
+                                       ("confluence", junction_pt)], {
         "event": event_key,
         "verified_by_user": False,
         "source": "OpenStreetMap, via osmnx; elevation from the Open-Meteo "
@@ -316,7 +320,189 @@ def draft_centerline(event_key: str, config_path: str | Path | None = None) -> P
     return out
 
 
-def _write_geojson(path, to_ll, reach, flat_pt, start_pt, junction_pt, props):
+def _named_like(gdf, river: str, pattern: str):
+    """Features whose OSM name or name:en matches a config pattern (regex)."""
+    hit = np.zeros(len(gdf), dtype=bool)
+    for column in ("name", "name:en"):
+        if column in gdf.columns:
+            hit |= gdf[column].fillna("").str.contains(
+                pattern, case=False, regex=True).to_numpy()
+    found = gdf[hit]
+    if found.empty:
+        raise RuntimeError(
+            f"OpenStreetMap returned no waterway matching {pattern!r} ({river}) "
+            "in the search box.")
+    return found
+
+
+def _merged_parts(lines: list[LineString]) -> list[LineString]:
+    union = unary_union(lines)
+    if union.geom_type == "LineString":
+        return [union]
+    merged = linemerge(union)
+    return list(merged.geoms) if merged.geom_type == "MultiLineString" else [merged]
+
+
+def _draft_from_fixed_start(cfg, event, event_key, waterways, to_utm, to_ll, out) -> Path:
+    """Draft that starts at start_point lon/lat from config (14.16) and runs
+    draft_length_km downstream along rivers[0], then rivers[1]."""
+    start = event.start_point
+    if start.lon is None or start.lat is None:
+        raise RuntimeError(
+            f"{event_key} start_point has no lon/lat in config.yaml, so no draft was written.")
+    patterns = list(event.osm_river_names)
+    if len(patterns) != len(event.rivers) or len(patterns) != 2:
+        raise RuntimeError(
+            f"{event_key}: osm_river_names needs one pattern for each of the two rivers "
+            f"{list(event.rivers)}.")
+    length_m = float(event.draft_length_km) * 1000.0
+    start_xy = Point(*to_utm.transform(start.lon, start.lat))
+
+    parts = _merged_parts(_to_metres(_named_like(waterways, event.rivers[0], patterns[0]), to_utm))
+    main = min(parts, key=lambda part: part.distance(start_xy))
+    offset_m = main.distance(start_xy)
+    # The line starts exactly at the config point, joined to the nearest point of the
+    # OSM line by a straight link that the user redraws in QGIS. The limit only
+    # catches a mistyped point.
+    link_max_m = float(getattr(event, "start_link_max_m", event.osm_snap_m))
+    if offset_m > link_max_m:
+        raise RuntimeError(
+            f"The start point is {offset_m:.0f} m from the OSM {event.rivers[0]} line, more than "
+            f"start_link_max_m ({link_max_m:g} m). It was not joined to the line.")
+    main = _orient_downstream(main, to_ll)
+    start_m = main.project(start_xy)
+    stem = substring(main, start_m, main.length)
+    if offset_m > 0:
+        stem = LineString([start_xy.coords[0], *stem.coords])
+    others = _merged_parts(_to_metres(_named_like(waterways, event.rivers[1], patterns[1]), to_utm))
+    joined, junction_m = _extend_downstream(stem, others, event.osm_snap_m, to_ll, length_m)
+    if joined.length < length_m:
+        raise RuntimeError(
+            f"The joined OSM line is {joined.length / 1000:.1f} km, shorter than the "
+            f"{length_m / 1000:.0f} km draft. Not inventing the rest (a gap in the OSM "
+            f"{event.rivers[1]} line, or the search box ends first).")
+    reach = substring(joined, 0, length_m)
+    start_pt = Point(reach.coords[0])
+    junction_pt = joined.interpolate(junction_m)
+    shared = sorted(key for key, other in vars(cfg.events).items()
+                    if getattr(other, "centerline_file", None) == event.centerline_file
+                    and not getattr(other, "is_placebo", False) and "__" not in key)
+    landmarks = _landmark_table(event, reach, to_utm)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    _write_geojson(out, to_ll, reach, [("start", start_pt), ("confluence", junction_pt)], {
+        "event": event_key,
+        "shared_by": shared,
+        "verified_by_user": False,
+        "source": "OpenStreetMap, via osmnx; elevation from the Open-Meteo Copernicus DEM "
+                  "service, used only to orient the line and pick the downstream branch",
+        "rivers": list(event.rivers),
+        "start_rule": "fixed_point",
+        "start_name": start.name,
+        "start_config_lonlat": [start.lon, start.lat],
+        "start_link_to_osm_m": round(offset_m, 1),
+        "confluence_river_km": round(junction_m / 1000, 3),
+        "length_m": round(reach.length, 1),
+        "draft_length_km": float(event.draft_length_km),
+        "landmarks_on_draft": {name: {k: round(v, 3) for k, v in row.items()}
+                               for name, row in landmarks.items()},
+        "note": "Draft only. Check against the pre-event Sentinel-2 image before use. "
+                "verified_by_user is false. Each event's reach is its reach_start_km to "
+                "reach_end_km on this line.",
+    })
+    join_ll = to_ll.transform(junction_pt.x, junction_pt.y)
+    print(f"Draft written to {out}")
+    print("verified_by_user: false")
+    print(f"Start ({start.name}): config {start.lat:.5f} N, {start.lon:.5f} E; "
+          f"{offset_m:.0f} m from the OSM line. The draft starts at this point, with a "
+          f"straight {offset_m:.0f} m link to the OSM line to redraw in QGIS")
+    print(f"{event.rivers[0]} -> {event.rivers[1]} junction in OSM at river_km "
+          f"{junction_m / 1000:.2f} ({join_ll[1]:.5f} N, {join_ll[0]:.5f} E)")
+    print(f"Line length: {reach.length / 1000:.2f} km (shared by {', '.join(shared)}); "
+          f"{event_key} reach: {event.reach_start_km}-{event.reach_end_km} km")
+    _print_landmarks(landmarks, draft=True)
+    return out
+
+
+def _landmark_table(event, line_m: LineString, to_utm: Transformer) -> dict:
+    """river_km and offset of each config landmark with coordinates (14.16 rule 6)."""
+    from .geometry import landmark_distances
+    marks = {m.name: to_utm.transform(m.lon, m.lat) for m in getattr(event, "landmarks", []) or []
+             if m.lon is not None and m.lat is not None}
+    missing = [m.name for m in getattr(event, "landmarks", []) or []
+               if m.lon is None or m.lat is None]
+    for name in missing:
+        print(f"Landmark {name}: no lon/lat in config.yaml, not placed.")
+    return landmark_distances(np.asarray(line_m.coords), marks) if marks else {}
+
+
+def _print_landmarks(table: dict, draft: bool) -> None:
+    which = "the unverified DRAFT line (will change when the line is corrected)" if draft \
+        else "the verified centerline"
+    print(f"Along-river distance from the start to each landmark, on {which}:")
+    for name, row in table.items():
+        print(f"  {name}: river_km {row['river_km']:.2f}, {row['offset_m']:.0f} m off the line")
+
+
+def _shown(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def river_checks(event_key: str, config_path: str | Path | None = None) -> dict:
+    """Print landmark distances (14.16 rule 6) and candidate confluences where MERIT
+    upstream area rises by more than section_break_upa_rise within
+    section_break_window_m (14.16 rule 4). Writes nothing."""
+    from .config import rasters_dir
+
+    cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
+    event = getattr(cfg.events, event_key)
+    path = PROJECT_ROOT / event.centerline_file
+    if not path.exists():
+        raise FileNotFoundError(f"Centerline not found: {path}")
+    verified = _centerline_is_verified(path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    feature = next(f for f in data["features"] if f["properties"].get("role") == "centerline")
+    to_utm = Transformer.from_crs(WGS84, cfg.crs, always_xy=True)
+    line = LineString([to_utm.transform(x, y) for x, y in feature["geometry"]["coordinates"]])
+    print(f"{_shown(path)}: {line.length / 1000:.2f} km, "
+          f"verified_by_user: {str(verified).lower()}")
+    landmarks = _landmark_table(event, line, to_utm)
+    _print_landmarks(landmarks, draft=not verified)
+
+    merit = rasters_dir(cfg, event_key) / "merit_upa.tif"
+    found: list[float] = []
+    if not merit.exists():
+        print(f"Candidate confluences need MERIT upa ({_shown(merit)} is "
+              "missing). Run fetch on the verified line, then this step again.")
+    else:
+        bands, grid = _read_bands(merit, ("upa",), cfg.crs)
+        upa_grid = bands["upa"]
+        dist =np.arange(0.0, line.length + 1e-6, float(cfg.station_spacing_m))
+        xy = np.array([[p.x, p.y] for p in (line.interpolate(d) for d in dist)])
+        upa = _sample_max(upa_grid, grid, xy, cfg.station_spacing_m)
+        _, found = stations_near_confluence(
+            dist / 1000.0, upa, cfg.section_break_window_m, cfg.section_break_upa_rise,
+            cfg.section_break_window_m)
+        rise = f"{cfg.section_break_upa_rise:.0%}"
+        if not found:
+            print(f"No candidate confluence: MERIT upa never rises by more than {rise} within "
+                  f"{cfg.section_break_window_m:g} m.")
+        else:
+            print(f"Candidate confluences (MERIT upa rises by more than {rise} within "
+                  f"{cfg.section_break_window_m:g} m), for the user to confirm as "
+                  "section_breaks_km:")
+            km = dist / 1000.0
+            for brk in found:
+                i = int(np.argmin(np.abs(km - brk)))
+                before = np.nanmax(upa[max(0, i - 3):i]) if i > 0 else np.nan
+                print(f"  river_km {brk:.2f}: upstream area {before:.0f} -> {upa[i]:.0f} km2")
+    return {"verified": verified, "landmarks": landmarks, "candidates": found}
+
+
+def _write_geojson(path, to_ll, reach, points, props):
     def wgs(geom):
         def project(coords):
             lon, lat = to_ll.transform(coords[:, 0], coords[:, 1])
@@ -324,8 +510,7 @@ def _write_geojson(path, to_ll, reach, flat_pt, start_pt, junction_pt, props):
         return transform(geom, project)
 
     features = []
-    for role, geom in (("centerline", reach), ("flat_downstream_end", flat_pt),
-                       ("start", start_pt), ("confluence", junction_pt)):
+    for role, geom in (("centerline", reach), *points):
         feature_props = {"role": role, "verified_by_user": False}
         if role == "centerline":
             feature_props.update(props)
@@ -784,7 +969,12 @@ def _load_exclusion_polygons(event_key: str, crs: str) -> list:
               "or dam was excluded.")
         return []
     gdf = gpd.read_file(path).to_crs(crs)
-    polygons = [geom for geom in gdf.geometry if geom is not None and not geom.is_empty]
+    if "verified_by_user" in gdf.columns and not (gdf["verified_by_user"] == True).all():  # noqa: E712
+        raise RuntimeError(
+            f"{path.relative_to(PROJECT_ROOT)} is a draft (verified_by_user is not true on "
+            "every feature). Review it in QGIS, draw each kept site as a polygon, and set "
+            "verified_by_user to true.")
+    polygons =[geom for geom in gdf.geometry if geom is not None and not geom.is_empty]
     print(f"Exclusion polygons: {len(polygons)} from {path.relative_to(PROJECT_ROOT)}")
     return polygons
 

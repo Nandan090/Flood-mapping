@@ -40,6 +40,8 @@ s2_reflectance_scale: 0.0001
 crs: EPSG:32645 # UTM 45N; all distances in metres
 grid_m: 10 # analysis grid, snapped to the Sentinel-2 grid
 corridor_buffer_m: 2000 # centerline buffered to make the corridor
+# Events the fetch step may download (and their placebo). Others are refused.
+fetch_events: [melamchi2021, lende2025]
 
 paths:
   data: data
@@ -288,14 +290,36 @@ events:
     post_start_utc: "2025-07-09T00:00:00Z"
     # Shared with bhotekoshi2026: same file, same river_km = 0 (14.16 rule 2).
     centerline_file: data/rasuwagadhi_trishuli/centerline.geojson
-    start_point: { name: Rasuwagadhi border crossing, lon: null, lat: null }
+    # Search box for the OSM draft, WGS84 (left, bottom, right, top): the extent of
+    # the 72 km draft line plus 2 km (user decision 2026-11-03; the km 0-35 box held
+    # only 37.9 km). osm_snap_m as for melamchi2021.
+    osm_bbox: [85.0048, 27.8342, 85.4045, 28.2952]
+    osm_snap_m: 150
+    # The draft starts exactly at start_point, with a straight link to the nearest
+    # point of the OSM line (user decision 2026-11-03; the link was 196 m). This
+    # limit only catches a mistyped point.
+    start_link_max_m: 250
+    # Fixed start (14.16): the draft starts at this point, snapped to the OSM line.
+    # Corrected by the user (2026-11-03) in Google Earth Pro.
+    start_point: { name: Rasuwagadhi border crossing, lon: 85.3748515, lat: 28.2761525, rule: fixed_point }
+    # The draft is built 72 km so bhotekoshi2026 can share it (14.16 rule 2); this
+    # event's reach is still reach_start_km to reach_end_km on it.
+    draft_length_km: 72
+    # OSM name / name:en patterns (regex), one per river in `rivers`.
+    osm_river_names: ["Bhote ?Koshi|भोटे कोशी", "Tri[s]h?uli|त्रिशुली|त्रिशूली"]
     reach_start_km: 0
     reach_end_km: 35 # from the draft paper, until the user replaces it
     rivers: [Bhotekoshi, Trishuli]
     section_breaks_km: null # user confirms confluences inside the reach
+    # Rasuwagadhi = the user-corrected start point. Syaphrubesi is from the
+    # search-aid line (corridor_points.csv km 14); the user confirms it.
     landmarks:
-      - { name: Rasuwagadhi, lon: null, lat: null }
-      - { name: Syaphrubesi, lon: null, lat: null }
+      - { name: Rasuwagadhi, lon: 85.3748515, lat: 28.2761525 }
+      - { name: Syaphrubesi, lon: 85.34287, lat: 28.16661 }
+    # WorldCover has no 2024 map (user decision 2026-11-03): the 2021 map stands in
+    # where Dynamic World has no observation in the S2 pre window (14.23 a). Recorded
+    # in provenance and the report; rows using it have forest_source worldcover or mixed.
+    worldcover_standin: { year: 2021, for_year: 2024, decided_on: "2026-11-03" }
     exclude_dates: []
     s2_pre: { start: "2024-10-01", end: "2024-12-15" }
     s2_post: { start: "2025-10-01", end: "2025-12-15" }
@@ -305,12 +329,23 @@ events:
     known_floods_between: []
     manual_exclusions: [] # filled from this event's post-event sheets (14.19 e)
     manual_exclusions_confirmed_on: null
+    # Independent validation edges (14.13), decided by the user. A point is valid
+    # only if its imagery capture date (not release date) is in the window. The
+    # window must end before 2026-08-26, when the bhotekoshi2026 flood hit this
+    # corridor. Sentinel-2 is not used: the impact label is built from it.
+    validation:
+      image_date_window: { start: "2025-07-09", end: "2026-05-31" }
+      must_end_before: "2026-08-26"
+      imagery_source: Google Earth Pro historical imagery
+      excluded_sources: [Sentinel-2]
     placebo:
       s2_pre: { start: "2022-10-01", end: "2022-12-15" }
       s2_post: { start: "2023-10-01", end: "2023-12-15" }
       fake_event_date: "2023-07-08"
       s1_pre: { start: "2022-07-09T00:00:00Z", end: "2022-08-15T00:00:00Z" }
       s1_post: { start: "2023-07-09T00:00:00Z", end: "2023-08-15T00:00:00Z" }
+      # WorldCover has no 2022 map (user decision 2026-11-03): 2021 stands in, flagged.
+      worldcover_standin: { year: 2021, for_year: 2022, decided_on: "2026-11-03" }
 
   bhotekoshi2026:
     name: Ice-rock avalanche debris flood

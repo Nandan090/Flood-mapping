@@ -231,13 +231,17 @@ def belt_metrics(index: np.ndarray, layers: dict, width: int) -> dict:
 
 
 def check_worldcover_year(provenance: dict) -> None:
-    """worldcover.tif must be the pre-event year's map (14.23 a). The only exception
-    is a placebo run whose fetch recorded an explicit stand-in for that year."""
+    """worldcover.tif must be the pre-event year's map (14.23 a). The exceptions are a
+    placebo run, or an event with a worldcover_standin decision in config, whose fetch
+    recorded an explicit stand-in for that year."""
     year = provenance["hansen"]["pre_composite_year"]
     exported = provenance.get("worldcover_exported", {})
     if exported.get("year") == year:
         return
     if "placebo" in provenance and exported.get("placebo_standin_for_year") == year:
+        return
+    if ("placebo" not in provenance and exported.get("standin_for_year") == year
+            and exported.get("standin_decided_on")):
         return
     raise RuntimeError(
         f"worldcover.tif is the {exported.get('year')} map, not the pre-event year "

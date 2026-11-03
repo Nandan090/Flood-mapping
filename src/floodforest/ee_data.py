@@ -23,7 +23,6 @@ from .dates import (assert_exposure_is_pre_event, assert_outcome_is_post_event,
                     composite_year, in_window, window_bounds)
 from .exposure import hansen_loss_window
 
-FETCH_EVENTS = ("melamchi2021",)
 _HANSEN_VERSION = re.compile(
     r"global_forest_change_(\d{4})(?:_v(\d+)_(\d+))?$"
 )
@@ -39,10 +38,12 @@ def fetch_event(event_key: str, config_path: str | Path | None = None,
     cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
     event = getattr(cfg.events, event_key, None)
     base_key = getattr(event, "base_event", event_key)
-    if base_key not in FETCH_EVENTS or event is None:
+    allowed = fetch_events(cfg)
+    if base_key not in allowed or event is None:
         raise RuntimeError(
-            f"fetch is implemented for {', '.join(FETCH_EVENTS)} (and their placebo) only. "
-            f"{event_key} is a later step, and nothing was downloaded for it."
+            f"fetch is enabled in config.yaml (fetch_events) for {', '.join(allowed)} "
+            f"(and their placebo) only. {event_key} is not listed, and nothing was "
+            "downloaded for it."
         )
     if getattr(event, "is_placebo", False):
         require_confirmed_flood_check(event, event_key)
@@ -91,7 +92,7 @@ def fetch_event(event_key: str, config_path: str | Path | None = None,
             "year": worldcover.year,
             "reason": (standin["note"] if standin else
                        f"map year matches the Sentinel-2 pre-composite year {pre_year}"),
-            **({"placebo_standin_for_year": pre_year} if standin else {}),
+            **(_standin_provenance(event, standin, pre_year) if standin else {}),
         },
         **({"placebo": {"base_event": event.base_event, "fake_event_date": event.event_dates[0],
                         "pre_end_utc": event.pre_end_utc, "post_start_utc": event.post_start_utc,
@@ -339,6 +340,18 @@ def _list_assets(parent: str) -> list:
             return found
 
 
+def fetch_events(cfg) -> tuple[str, ...]:
+    """Events the fetch step may download, from config (fetch_events)."""
+    return tuple(getattr(cfg, "fetch_events", None) or ())
+
+
+def _standin_provenance(event, standin: dict, pre_year: int) -> dict:
+    """How a WorldCover stand-in is recorded. A placebo keeps its original key."""
+    if getattr(event, "is_placebo", False):
+        return {"placebo_standin_for_year": pre_year}
+    return {"standin_for_year": pre_year, "standin_decided_on": standin["decided_on"]}
+
+
 def require_confirmed_flood_check(event, event_key: str) -> None:
     """A placebo runs only on a period the user confirmed free of notable floods (14.2),
     and the confirmed interval must span the placebo windows."""
@@ -358,20 +371,23 @@ def require_confirmed_flood_check(event, event_key: str) -> None:
 def worldcover_for_event(cfg, event, year: int):
     """The WorldCover map for the pre-composite year (14.23 a).
 
-    A placebo event may carry an explicit worldcover_standin (user decision) when no
-    map exists for its year. Every other case keeps the exact-year rule.
-    Returns (asset entry, stand-in record or None).
+    An event (or a placebo) may carry an explicit worldcover_standin in config (user
+    decision) when no map exists for its year. Every event without that setting keeps
+    the exact-year rule. Returns (asset entry, stand-in record or None).
     """
     standin = getattr(event, "worldcover_standin", None)
-    if getattr(event, "is_placebo", False) and standin is not None:
+    if standin is not None:
+        placebo = getattr(event, "is_placebo", False)
         if standin.for_year != year:
+            kind = "placebo pre-composite" if placebo else "pre-composite"
             raise AssetError(
-                f"worldcover_standin is for {standin.for_year}, but the placebo pre-composite "
+                f"worldcover_standin is for {standin.for_year}, but the {kind} "
                 f"year is {year}. No map was used.")
         item = _worldcover_for_year(cfg, standin.year)
+        scope = "Placebo only" if placebo else "Stand-in (user decision, this event only)"
         return item, {
             "year": standin.year, "for_year": year, "decided_on": standin.decided_on,
-            "note": (f"Placebo only: WorldCover {standin.year} ({item.id}) stands in for "
+            "note": (f"{scope}: WorldCover {standin.year} ({item.id}) stands in for "
                      f"{year}, which has no map, where Dynamic World has no observation "
                      f"(user decision {standin.decided_on}). Rows using it are flagged."),
         }

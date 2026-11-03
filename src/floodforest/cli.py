@@ -11,7 +11,7 @@ import argparse
 
 STEPS = ["fetch", "label", "transects", "profiles", "table", "stats",
          "validate", "placebo", "report", "all", "qa_centerline", "dw_gap_check",
-         "edges", "compare"]
+         "edges", "compare", "river_checks"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -76,6 +76,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.step == "dw_gap_check":
         from .ee_data import dynamic_world_tile_dates
         dynamic_world_tile_dates(args.event)
+        return 0
+    if args.step == "river_checks":
+        from .centerline import river_checks
+        river_checks(args.event)
         return 0
     if args.step == "qa_centerline":
         from .qa import qa_centerline

@@ -94,8 +94,45 @@ def test_placebo_key_must_be_the_real_event():
 
 def test_fetch_refuses_placebos_of_events_it_cannot_fetch():
     from floodforest.ee_data import fetch_event
-    with pytest.raises(RuntimeError, match="implemented for"):
+    with pytest.raises(RuntimeError, match="not listed"):
+        fetch_event("bhotekoshi2026_placebo")
+    # lende2025 is listed, but its placebo still needs a confirmed flood check first.
+    with pytest.raises(RuntimeError, match="no confirmed flood_check"):
         fetch_event("lende2025_placebo")
+
+
+def test_fetch_events_come_from_config():
+    from floodforest.ee_data import fetch_event, fetch_events
+    cfg = load_config()
+    assert fetch_events(cfg) == ("melamchi2021", "lende2025")
+    with pytest.raises(RuntimeError, match="not listed"):
+        fetch_event("bhotekoshi2026")
+
+
+def test_worldcover_standin_for_lende_real_and_placebo():
+    from floodforest.ee_data import AssetError, worldcover_for_event
+    cfg = load_config()
+    item, standin = worldcover_for_event(cfg, cfg.events.lende2025, 2024)
+    assert item.year == 2021 and standin["for_year"] == 2024
+    assert standin["note"].startswith("Stand-in (user decision")
+    item, standin = worldcover_for_event(cfg, cfg.events.lende2025_placebo, 2022)
+    assert item.year == 2021 and standin["for_year"] == 2022
+    assert standin["note"].startswith("Placebo only")
+    with pytest.raises(AssetError, match="standin is for 2024"):
+        worldcover_for_event(cfg, cfg.events.lende2025, 2025)
+    # An event without the setting still refuses a year with no map.
+    with pytest.raises(AssetError, match="No other year"):
+        worldcover_for_event(cfg, cfg.events.bhotekoshi2026, 2025)
+
+
+def test_exposure_accepts_a_recorded_event_standin():
+    from floodforest.exposure import check_worldcover_year
+    hansen = {"pre_composite_year": 2024}
+    check_worldcover_year({"hansen": hansen, "worldcover_exported": {
+        "year": 2021, "standin_for_year": 2024, "standin_decided_on": "2026-11-03"}})
+    with pytest.raises(RuntimeError, match="not the pre-event year"):
+        check_worldcover_year({"hansen": hansen, "worldcover_exported": {
+            "year": 2021, "standin_for_year": 2024}})
 
 
 def test_cli_wires_the_placebo_step():

@@ -411,7 +411,8 @@ def run_stats(event_key: str, config_path: str | Path | None = None,
     placebo_drop = _placebo_dropping(P, forest, forest_terciles) if placebo_ok else None
     written += _figures(out_dir, primary, table, cfg)
     text = _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs,
-                   placebo_drop, checks, verdict, reasons, flips)
+                   placebo_drop, checks, verdict, reasons, flips,
+                   standin_note=_worldcover_standin_note(event, cfg, T, base))
     report = out_dir / "STATS_REPORT.md"
     report.write_text(text, encoding="utf-8")
     written.append(report)
@@ -633,8 +634,23 @@ def _sign_disagreements(primary: dict) -> list[str]:
     return out
 
 
+def _worldcover_standin_note(event, cfg, T, base) -> str | None:
+    """Report line for an event with a WorldCover stand-in decision (14.23 a); None otherwise."""
+    standin = getattr(event, "worldcover_standin", None)
+    if standin is None:
+        return None
+    share = pd.to_numeric(T[f"forest_source_worldcover_frac_{int(cfg.belt_width_m)}"],
+                          errors="coerce").fillna(0)
+    used = int((base["in_set"] & (share > 0)).sum())
+    return (f"- **WorldCover stand-in (14.23 a, user decision {standin.decided_on}).** WorldCover "
+            f"{standin.year} stands in for {standin.for_year}, which has no map, where Dynamic "
+            f"World has no observation in the S2 pre window. {used} of {int(base['in_set'].sum())} "
+            "analysis-set rows use it (forest_source worldcover or mixed); the "
+            "'forest_source dynamic_world only' run leaves them out.")
+
+
 def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, placebo_drop,
-            checks, verdict, reasons, flips) -> str:
+            checks, verdict, reasons, flips, standin_note=None) -> str:
     A, B = primary["A"], primary["B"]
     sup = primary.get("support", {})
     disagree = _sign_disagreements(primary)
@@ -698,6 +714,7 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
         "rows, Model B the SD of y_L - y_R in its pairs. The 14.9 prevalence of overtopped is "
         "taken over the run's full analysis set. 14.10 narrowness uses Model A's SD(y) for both "
         "models, as before.",
+        *([standin_note] if standin_note else []),
         "",
         "Primary interval (14.15): wild cluster bootstrap-t, null imposed, CR1, Rademacher, "
         f"{cfg.wild_bootstrap_draws} draws, {cfg.bootstrap_block_km:g} km blocks; p(0) reported; "
