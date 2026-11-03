@@ -38,9 +38,12 @@ def _table(n=60, seed=0):
 
 def test_model_frame_fills_wall_slope_and_flags_it():
     t = _table()
-    t.loc[3, "curvature"] = np.nan
+    t.loc[3, "curvature"] = np.nan          # a Model A control only
+    t.loc[5, "forest_frac_100"] = np.nan    # needed by both models
     df = S.model_frame(t, "forest_frac_100")
-    assert df.attrs["dropped_missing"] == 1 and len(df) == len(t) - 1
+    assert df.attrs["dropped_missing"] == 2 and df.attrs["dropped_missing_b"] == 1
+    assert len(df) == len(t) - 1                       # row 5 is usable by neither
+    assert not df.loc[3, "a_ok"] and df.loc[3, "b_ok"]
     no_wall = df.valley_wall_found == 0
     assert (df.loc[no_wall, "wall_slope_deg"] == 0).all()
     assert (df.loc[~no_wall, "wall_slope_deg"] >= 30).all()
@@ -124,7 +127,7 @@ def _checks(**over):
     base = {k: True for k in ("a_height_neg_sig", "b_height_neg_sig", "dist_same_sign",
                               "labels_same_sign", "dems_same_sign", "placebo_null",
                               "validation_ok", "validated", "enough_blocks", "overlap_ok",
-                              "model_b_informative")}
+                              "model_b_informative", "no_sign_flips")}
     base.update(all_include_null=False, all_narrow=False)
     base.update(over)
     return base
@@ -142,8 +145,25 @@ def test_decision_rule():
     assert verdict == "Inconclusive" and any("reasonably narrow" in r for r in reasons)
     verdict, reasons = S.decide_verdict(_checks(**nul, all_narrow=True, placebo_null=False))
     assert verdict == "Inconclusive" and any("cannot be trusted" in r for r in reasons)
-    for cap in ("enough_blocks", "overlap_ok", "model_b_informative", "validated"):
+    for cap in ("enough_blocks", "overlap_ok", "model_b_informative", "validated",
+                "no_sign_flips"):
         assert S.decide_verdict(_checks(**{cap: False}))[0] == "Inconclusive"
+    verdict, reasons = S.decide_verdict(_checks(**nul, all_narrow=True, no_sign_flips=False))
+    assert verdict == "Inconclusive" and any("sign flips" in r for r in reasons)
+
+
+def test_sign_flips_compare_each_run_with_the_primary():
+    primary = {("A", "y_height"): {"beta": -0.5}, ("B", "y_height"): {"beta": 2.0},
+               ("A", "y_over"): {"error": "not estimable"}}
+    runs = {"r1": {("A", "y_height"): {"beta": -1.0, "p0": 0.2},
+                   ("B", "y_height"): {"beta": -0.3, "p0": 0.6}},
+            "r2": {("A", "y_height"): {"beta": 0.4, "p0": 0.01},
+                   ("A", "y_over"): {"beta": 1.0}},
+            "r3": {("A", "y_height"): {"error": "x"}}}
+    flips = S.sign_flips(primary, runs, [("A", "y_height"), ("B", "y_height"), ("A", "y_over")])
+    assert {(f["run"], f["model"], f["outcome"]) for f in flips} == {
+        ("r1", "B", "y_height"), ("r2", "A", "y_height")}
+    assert next(f for f in flips if f["run"] == "r2")["run_p0"] == 0.01
 
 
 # --- rebuild variants -------------------------------------------------------
@@ -197,6 +217,74 @@ def test_variant_provenance_keeps_fetch_and_frozen_tbsi_only():
 
 
 # --- runner helpers -----------------------------------------------------------
+
+def _planted(beta: float, seed: int = 11) -> pd.DataFrame:
+    """Synthetic table in transects.csv column names with a planted forest effect.
+
+    Reach height and log1p distance both carry beta * F per bank; noise is shared
+    within 1 km segments, so neighbouring rows are correlated.
+    """
+    rng = np.random.default_rng(seed)
+    n_st = 240                                   # 24 km at 100 m, 8 blocks of 3 km
+    st = np.repeat(np.arange(n_st), 2)
+    side = np.tile(["left", "right"], n_st)
+    km = st * 0.1
+    seg = np.floor(km).astype(int)
+    n = len(st)
+    wall = (rng.random(n) > 0.25).astype(int)
+    forest = rng.random(n)
+    bank_slope = rng.random(n) * 30
+    seg_noise = rng.normal(0, 0.3, seg.max() + 1)[seg]
+    height = 3 + beta * forest + 0.02 * bank_slope + seg_noise + rng.normal(0, 0.5, n)
+    logdist = 3 + 0.3 * beta * forest + 0.01 * bank_slope + seg_noise + rng.normal(0, 0.3, n)
+    dist = np.expm1(np.clip(logdist, 0, None))
+    return pd.DataFrame({
+        "station_id": st, "side": side, "river_km": km, "segment_id": seg,
+        "block_id": np.floor(km / 3).astype(int), "river_section": 0,
+        "channel_resolved": (rng.random(n) > 0.2).astype(int),
+        "forest_frac_100": forest, "channel_width_m": 20 + rng.random(n) * 30,
+        "gradient_fab": rng.normal(size=n), "valley_width_m_fab": 50 + rng.random(n) * 300,
+        "wall_slope_deg_fab": np.where(wall == 1, 30 + rng.random(n) * 20, np.nan),
+        "valley_wall_found_fab": wall, "bank_slope_deg_fab": bank_slope,
+        "log10_upa": rng.normal(2, 0.1, n), "outer_bend": rng.integers(0, 2, n),
+        "curvature": rng.normal(size=n), "bank_elev_m_fab": 800 + rng.random(n) * 50,
+        "reach_height_m_fab": np.clip(height, 0, None), "reach_distance_m_fab": dist,
+        "overtopped_fab": (dist >= 20).astype(int), "censored_fab": 0,
+    })
+
+
+@pytest.mark.parametrize("beta", [-3.0, 3.0])
+def test_planted_effect_recovered_in_sign_through_the_production_path(beta):
+    """Test 4 through model_frame and fit_run (the code the stats step runs)."""
+    from types import SimpleNamespace
+    from floodforest.stats_run import fit_run
+    cfg = SimpleNamespace(**vars(CFG))
+    cfg.wild_bootstrap_draws = 399          # fewer draws for speed; same code path
+    df = S.model_frame(_planted(beta), "forest_frac_100")
+    run = fit_run(df, cfg, with_sections=False)
+    for model in ("A", "B"):
+        for y in ("y_height", "y_logdist"):
+            r = run[model][y]
+            assert "error" not in r, r
+            assert np.sign(r["beta"]) == np.sign(beta), (model, y, r["beta"])
+            assert r["p0"] <= cfg.interval_alpha, (model, y, r["p0"])
+    lo, hi = run["A"]["y_height"]["interval"]
+    assert lo < beta < hi
+    assert run["b_info"]["stations"] == 240 and run["a_blocks"] == 8
+
+
+def test_model_b_keeps_a_pair_whose_bank_lacks_only_a_model_a_control():
+    from types import SimpleNamespace
+    from floodforest.stats_run import fit_run
+    cfg = SimpleNamespace(**vars(CFG))
+    cfg.wild_bootstrap_draws = 99
+    t = _planted(-3.0)
+    t.loc[0, "curvature"] = np.nan          # station 0, left bank
+    run = fit_run(S.model_frame(t, "forest_frac_100"), cfg, with_sections=False, trim=False)
+    assert run["a_rows"] == len(t) - 1
+    assert run["b_info"]["stations"] == 240
+    assert 0 in set(run["_pairs"].station_id)
+
 
 def test_logistic_is_not_estimable_with_fewer_events_than_terms():
     from floodforest.stats_run import _logit

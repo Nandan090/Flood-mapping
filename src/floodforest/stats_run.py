@@ -117,7 +117,8 @@ def _wild(df, outcome, rhs, term, cfg, percentile=False) -> dict:
     try:
         res = S.wild_cluster_result(df, outcome, rhs, term, "block_id",
                                     int(cfg.wild_bootstrap_draws), int(cfg.seed),
-                                    float(cfg.ci_bisection_tolerance_se))
+                                    float(cfg.ci_bisection_tolerance_se),
+                                    alpha=float(cfg.interval_alpha))
     except Exception as exc:  # reported in the table, never hidden
         return {"error": f"{type(exc).__name__}: {exc}"}
     res["interval"] = tuple(float(v) for v in res["interval"])
@@ -136,7 +137,8 @@ def _logit(df, rhs, cfg) -> dict:
         return {"error": f"not estimable: {fewer} rows in the smaller outcome class, fewer than "
                          f"the {k} model terms"}
     try:
-        res = S.logistic_cluster_interval(df, "y_over", rhs, "forest_frac", "block_id")
+        res = S.logistic_cluster_interval(df, "y_over", rhs, "forest_frac", "block_id",
+                                          level=1 - float(cfg.interval_alpha))
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {exc}"}
     if not all(np.isfinite([res["odds_ratio"], *res["or_interval"]])):
@@ -147,17 +149,22 @@ def _logit(df, rhs, cfg) -> dict:
 def fit_run(df: pd.DataFrame, cfg, with_sections: bool, trim: bool = True,
             b_df: pd.DataFrame | None = None, percentile: bool = False,
             aft: bool = False) -> dict:
-    """Model A (trimmed by common support unless trim=False) and Model B (never trimmed)."""
-    rhs = rhs_for(df, cfg, with_sections)
+    """Model A (trimmed by common support unless trim=False) and Model B (never trimmed).
+
+    Model A uses rows with every Model A value (a_ok); Model B pairs rows with Model B's
+    own variables (b_ok), so a missing Model A control does not cost a Model B pair.
+    """
+    a_all = df[df["a_ok"]]
+    rhs = rhs_for(a_all, cfg, with_sections)
     controls = rhs.split(" + ", 1)[1]
     out = {"rows": int(len(df)), "rhs_a": rhs, "dropped_missing": df.attrs.get("dropped_missing", 0)}
-    a_df = df
+    a_df = a_all
     if trim:
         try:
-            cs = S.common_support(df, controls, float(cfg.forest_high_threshold),
+            cs = S.common_support(a_all, controls, float(cfg.forest_high_threshold),
                                   float(cfg.forest_high_min_share),
                                   float(cfg.overlap_min_row_fraction), int(cfg.overlap_min_segments))
-            a_df = df[cs["keep"]]
+            a_df = a_all[cs["keep"]]
             out["support"] = {k: cs[k] for k in ("rule", "bounds", "rows", "kept", "dropped",
                                                   "kept_segments", "too_thin")}
             out["_cs"] = cs
@@ -170,13 +177,19 @@ def fit_run(df: pd.DataFrame, cfg, with_sections: bool, trim: bool = True,
     out["A"] = {y: _wild(a_df, y, rhs_for(a_df, cfg, with_sections), "forest_frac", cfg, percentile)
                 for y in ("y_height", "y_logdist")}
     out["A"]["y_over"] = _logit(a_df, rhs_for(a_df, cfg, with_sections), cfg)
+    # SD(y) of Model A's own rows: used for Model A E-values and, unchanged, for 14.10.
     out["sd"] = {y: float(a_df[y].std(ddof=1)) for y in ("y_height", "y_logdist")}
-    out["prevalence"] = float(a_df["y_over"].mean())
+    # 14.9: prevalence of overtopped in the full analysis set of this run.
+    out["prevalence"] = float(df["y_over"].dropna().mean())
     out["iqr_F"] = float(a_df.forest_frac.quantile(0.75) - a_df.forest_frac.quantile(0.25))
-    pairs = S.paired_frame(df if b_df is None else b_df)
+    b_src = df if b_df is None else b_df
+    pairs = S.paired_frame(b_src[b_src["b_ok"]])
     out["b_info"] = S.model_b_informative(pairs, int(cfg.model_b_min_stations),
                                           float(cfg.model_b_min_forest_diff))
     out["b_blocks"] = int(pairs.block_id.nunique())
+    out["b_segments"] = int(pairs.segment_id.nunique())
+    # SD of Model B's own outcome (y_L - y_R), for Model B E-values (8.7).
+    out["sd_b"] = {y: float(pairs[f"d_{y}"].std(ddof=1)) for y in ("y_height", "y_logdist")}
     out["_pairs"] = pairs
     out["B"] = {y: _wild(pairs, f"d_{y}", b_rhs_for(pairs), "d_forest", cfg, percentile)
                 for y in ("y_height", "y_logdist")}
@@ -197,6 +210,7 @@ def flat_rows(name: str, group: str, note: str, run: dict) -> list[dict]:
         for outcome, r in part.items():
             base = {"run": name, "group": group, "note": note, "model": model, "outcome": outcome,
                     "rows": run["a_rows"] if model == "A" else run["b_info"]["stations"],
+                    "segments": run["a_segments"] if model == "A" else run["b_segments"],
                     "blocks": run["a_blocks"] if model == "A" else run["b_blocks"]}
             if "error" in r:
                 rows.append({**base, "error": r["error"]})
@@ -259,13 +273,13 @@ def run_stats(event_key: str, config_path: str | Path | None = None,
     t = analysis_rows(T, L, cfg, dem="cop")
     spec("DEM Copernicus GLO-30", "DEM", "8.8; outcomes and DEM controls from GLO-30",
          frame(t, dem="cop"))
-    for w in (50, 200):
+    for w in (int(v) for v in cfg.belt_widths_m):
         if w == int(cfg.belt_width_m):
             continue
         t = analysis_rows(T, L, cfg, belt=w)
         mask = t["in_set"] & ((t.usable_length_m >= w) if w > cfg.belt_width_m else True)
         spec(f"belt {w} m", "belt width",
-             "8.8" + ("; rows with usable_length_m >= 200 (14.21)" if w == 200 else ""),
+             "8.8" + (f"; rows with usable_length_m >= {w} (14.21)" if w > cfg.belt_width_m else ""),
              frame(t, mask, forest_col=f"forest_frac_{w}"))
     spec("forest WorldCover", "forest definition", "8.8: WorldCover class 10 share",
          frame(base, base["in_set"] & base[f"forest_frac_worldcover_{int(cfg.belt_width_m)}"].notna(),
@@ -279,18 +293,21 @@ def run_stats(event_key: str, config_path: str | Path | None = None,
     spec("forest_source dynamic_world only", "forest definition", "14.23 a",
          frame(base, base["in_set"] & (base[f"forest_source_{int(cfg.belt_width_m)}"] == "dynamic_world")))
     slope_top = bank_top_slope(cfg, event_key, base)
-    spec("steep: bank-top slope <= 45 deg", "steep terrain",
-         "8.8 (user decision): pre-event terrain, 10 x tan(bank-top slope) <= 10 m",
-         frame(base, base["in_set"] & (slope_top <= 45)))
+    smax = float(cfg.steep_bank_top_slope_max_deg)
+    umax = float(cfg.steep_unc_max_m)
+    spec(f"steep: bank-top slope <= {smax:g} deg", "steep terrain",
+         f"8.8 (user decision): pre-event terrain, {cfg.grid_m:g} x tan(bank-top slope) <= {umax:g} m",
+         frame(base, base["in_set"] & (slope_top <= smax)))
     unc = base["reach_height_unc_m_fab"]
-    spec("steep: unc <= 10 m plus all zero-reach rows", "steep terrain",
+    spec(f"steep: unc <= {umax:g} m plus all zero-reach rows", "steep terrain",
          "8.8 variant (user decision): keeps every zero-reach row",
-         frame(base, base["in_set"] & ((base["reach_distance_m_fab"] == 0) | (unc <= 10))))
-    spec("steep: literal unc <= 10 m", "steep terrain",
+         frame(base, base["in_set"] & ((base["reach_distance_m_fab"] == 0) | (unc <= umax))))
+    spec(f"steep: literal unc <= {umax:g} m", "steep terrain",
          "selects rows by outcome (conflicts with 14.5); not a headline result",
-         frame(base, base["in_set"] & (unc <= 10)))
-    spec("terraces: bank slope <= 15 deg", "terrain", "8.8",
-         frame(base, base["in_set"] & (base["bank_slope_deg_fab"] <= 15)))
+         frame(base, base["in_set"] & (unc <= umax)))
+    tmax = float(cfg.terrace_bank_slope_max_deg)
+    spec(f"terraces: bank slope <= {tmax:g} deg", "terrain", "8.8",
+         frame(base, base["in_set"] & (base["bank_slope_deg_fab"] <= tmax)))
     end = float(event.reach_end_km) - float(cfg.reach_end_shift_km)
     spec(f"reach end {end:.1f} km (5 km upstream)", "reach", "14.5",
          frame(base, base["in_set"] & (base.river_km <= end)))
@@ -321,8 +338,9 @@ def run_stats(event_key: str, config_path: str | Path | None = None,
             zt[f"{k}_fab"] = z[f"{k}_fab"]
         spec(f"{reason} rows as reach 0", "zeros", f"{ref}: {z.attrs['added_rows']} rows added",
              frame(zt))
-    spec("usable length >= 300 m", "neighbours", "14.21",
-         frame(base, base["in_set"] & (base.usable_length_m >= 300)))
+    umin = float(cfg.usable_length_sensitivity_m)
+    spec(f"usable length >= {umin:g} m", "neighbours", "14.21",
+         frame(base, base["in_set"] & (base.usable_length_m >= umin)))
     spec("wall slope: complete cases", "wall slope", "user decision: rows with a valley wall only",
          frame(base, base["in_set"] & (base.valley_wall_found_fab == 1)))
 
@@ -384,11 +402,16 @@ def run_stats(event_key: str, config_path: str | Path | None = None,
 
     table = pd.DataFrame(results)
     written = [_save(table, out_dir / "stats_results.csv")]
-    checks, verdict, reasons = _verdict(primary, runs, placebo_runs, cfg)
+    flips = S.sign_flips(_by_key(primary), {n: _by_key(r) for n, r in runs.items() if n != "primary"},
+                         FLIP_KEYS)
+    written.append(_save(pd.DataFrame(flips, columns=["run", "model", "outcome", "primary_beta",
+                                                      "run_beta", "run_p0"]),
+                         out_dir / "stats_sign_flips.csv"))
+    checks, verdict, reasons = _verdict(primary, runs, placebo_runs, cfg, flips)
     placebo_drop = _placebo_dropping(P, forest, forest_terciles) if placebo_ok else None
-    written += _figures(out_dir, primary, table)
+    written += _figures(out_dir, primary, table, cfg)
     text = _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs,
-                   placebo_drop, checks, verdict, reasons)
+                   placebo_drop, checks, verdict, reasons, flips)
     report = out_dir / "STATS_REPORT.md"
     report.write_text(text, encoding="utf-8")
     written.append(report)
@@ -400,6 +423,15 @@ def run_stats(event_key: str, config_path: str | Path | None = None,
     for p in written:
         print(p.relative_to(PROJECT_ROOT))
     return written
+
+
+# Outcomes compared for 8.10 sign flips: both models' OLS outcomes and Model A's logistic.
+FLIP_KEYS = (("A", "y_height"), ("A", "y_logdist"), ("A", "y_over"),
+             ("B", "y_height"), ("B", "y_logdist"))
+
+
+def _by_key(run: dict) -> dict:
+    return {(m, y): r for m in ("A", "B") for y, r in run.get(m, {}).items()}
 
 
 def _save(frame: pd.DataFrame, path: Path) -> Path:
@@ -423,31 +455,32 @@ def _json(v):
     return str(v)
 
 
-def _neg_sig(r: dict) -> bool:
-    return "error" not in r and r["beta"] < 0 and r["p0"] <= 0.05
+def _neg_sig(r: dict, alpha: float) -> bool:
+    return "error" not in r and r["beta"] < 0 and r["p0"] <= alpha
 
 
 def _neg(r: dict) -> bool:
     return "error" not in r and r["beta"] < 0
 
 
-def _includes_null(r: dict) -> bool:
+def _includes_null(r: dict, alpha: float) -> bool:
     if "error" in r:
         return False
     if "or_interval" in r:
         return r["or_interval"][0] <= 1 <= r["or_interval"][1]
-    return r["p0"] > 0.05
+    return r["p0"] > alpha
 
 
 def _validation_flag(cfg) -> tuple[bool, str]:
-    path = PROJECT_ROOT / "results" / "validation_summary.csv"
+    path = PROJECT_ROOT / cfg.paths.results / "validation_summary.csv"
     if not path.exists():
         return False, "no validation summary"
     v = pd.read_csv(path)
     g = v[(v.subset == "main") & (v.breakdown == "forest_group")].set_index("category")
     low, high = g.loc["Low"], g.loc["High"]
-    if low.n < 8 or high.n < 8:
-        return False, "a forest group has fewer than 8 validation points"
+    n_min = int(cfg.validation_min_group_n)
+    if low.n < n_min or high.n < n_min:
+        return False, f"a forest group has fewer than {n_min} validation points"
     gap = float(high.share_under_detected - low.share_under_detected)
     return gap <= cfg.validation_recall_gap, (
         f"under-detected High {high.share_under_detected:.1%} vs Low "
@@ -455,8 +488,9 @@ def _validation_flag(cfg) -> tuple[bool, str]:
         f"{cfg.validation_recall_gap * 100:.0f})")
 
 
-def _verdict(primary, runs, placebo_runs, cfg):
+def _verdict(primary, runs, placebo_runs, cfg, flips):
     A, B = primary["A"], primary["B"]
+    alpha = float(cfg.interval_alpha)
     val_ok, val_note = _validation_flag(cfg)
     narrow = []
     for model in (A, B):
@@ -475,12 +509,12 @@ def _verdict(primary, runs, placebo_runs, cfg):
                 r = pl[model].get(y)
                 if r is None or "error" in r:      # not estimated: no evidence either way
                     continue
-                if not _includes_null(r):
+                if not _includes_null(r, alpha):
                     placebo_effects.append(f"Model {model} {OUT_NAMES[y]}: {_ci(r)}")
     placebo_null = bool(pl) and not placebo_effects
     checks = {
-        "a_height_neg_sig": _neg_sig(A["y_height"]),
-        "b_height_neg_sig": _neg_sig(B["y_height"]),
+        "a_height_neg_sig": _neg_sig(A["y_height"], alpha),
+        "b_height_neg_sig": _neg_sig(B["y_height"], alpha),
         "dist_same_sign": _neg(A["y_logdist"]) and _neg(B["y_logdist"]),
         "labels_same_sign": all(_neg(runs[f"label {l}"]["A"]["y_height"])
                                 for l in ("optical_only", "sar_only")),
@@ -488,12 +522,14 @@ def _verdict(primary, runs, placebo_runs, cfg):
         "placebo_null": placebo_null,
         "placebo_effects": "; ".join(placebo_effects) or "none",
         "validation_ok": val_ok, "validation_note": val_note,
-        "validated": (PROJECT_ROOT / "results" / "validation_per_point.csv").exists(),
+        "validated": (PROJECT_ROOT / cfg.paths.results / "validation_per_point.csv").exists(),
         "enough_blocks": S.enough_blocks(primary["a_blocks"], int(cfg.min_blocks)),
         "overlap_ok": not primary.get("support", {}).get("too_thin", True),
         "model_b_informative": primary["b_info"]["informative"],
-        "all_include_null": all(_includes_null(r) for r in (A["y_height"], A["y_logdist"],
-                                                              B["y_height"], B["y_logdist"], over)),
+        "no_sign_flips": not flips,
+        "sign_flips": f"{len(flips)} (run x model x outcome); see the sign-flip table",
+        "all_include_null": all(_includes_null(r, alpha) for r in (A["y_height"], A["y_logdist"],
+                                                                     B["y_height"], B["y_logdist"], over)),
         "all_narrow": all(narrow),
     }
     verdict, reasons = S.decide_verdict(checks)
@@ -514,7 +550,7 @@ def _placebo_dropping(P, forest, forest_terciles) -> dict:
 # Figures and report
 # ---------------------------------------------------------------------------
 
-def _figures(out_dir: Path, primary: dict, table: pd.DataFrame) -> list[Path]:
+def _figures(out_dir: Path, primary: dict, table: pd.DataFrame, cfg) -> list[Path]:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -538,7 +574,7 @@ def _figures(out_dir: Path, primary: dict, table: pd.DataFrame) -> list[Path]:
         plt.close(fig)
     fig, ax = plt.subplots(figsize=(6, 3.6), dpi=120)
     ax.hist(primary["_pairs"]["d_forest"].abs(), bins=20, color="#4a5568")
-    ax.axvline(0.2, color="red", lw=1)
+    ax.axvline(float(cfg.model_b_min_forest_diff), color="red", lw=1)
     ax.set_xlabel("|F_L - F_R|")
     ax.set_ylabel("stations")
     ax.set_title("Model B: forest difference between banks (14.8)", fontsize=9)
@@ -587,10 +623,23 @@ OUT_NAMES = {"y_height": "reach height (m)", "y_logdist": "log1p reach distance"
              "y_over": "overtopped (logistic)"}
 
 
+def _sign_disagreements(primary: dict) -> list[str]:
+    """8.3: outcomes where Model A and Model B point in opposite directions."""
+    out = []
+    for y in ("y_height", "y_logdist"):
+        a, b = primary["A"][y], primary["B"][y]
+        if "beta" in a and "beta" in b and np.sign(a["beta"]) != np.sign(b["beta"]):
+            out.append(f"{OUT_NAMES[y]}: Model A {_f(a['beta'])}, Model B {_f(b['beta'])}")
+    return out
+
+
 def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, placebo_drop,
-            checks, verdict, reasons) -> str:
+            checks, verdict, reasons, flips) -> str:
     A, B = primary["A"], primary["B"]
     sup = primary.get("support", {})
+    disagree = _sign_disagreements(primary)
+    rivers = list(getattr(event, "rivers", []))
+    breaks = list(event.section_breaks_km or [])
     lines = [
         f"# Statistics: {event_key}",
         "",
@@ -604,6 +653,10 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
         *([f"**The placebo shows a forest association ({checks['placebo_effects']}). Under 8.9 "
            "the method is producing artefacts and the main result cannot be trusted.**", ""]
           if not checks["placebo_null"] else []),
+        *([f"**Model A and Model B disagree in sign (8.3): {'; '.join(disagree)}.**", ""]
+          if disagree else []),
+        *([f"**{len(flips)} sensitivity estimates flip sign relative to the primary run "
+           "(8.10); see the sign-flip table.**", ""] if flips else []),
         *(f"- {r}" for r in reasons),
         "",
         "| Check | Result |", "|---|---|",
@@ -618,11 +671,37 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
         "in the analysis set; not trimmed (14.8).",
         "",
         "Wall slope is 0 where no valley wall was found, with valley_wall_found in both models "
-        "(user decision); a complete-case run is in the sensitivity table.",
+        "(user decision); a complete-case run is in the sensitivity table. Model B pairs are "
+        "built from Model B's own variables, so a bank missing only a Model A control (for "
+        "example curvature at the end of the line) still pairs.",
+        "",
+        "### Methods notes",
+        "",
+        f"- **Gap tolerance (7.2).** Samples are {cfg.grid_m:g} m apart and a run of N samples "
+        f"spans (N - 1) x {cfg.grid_m:g} m. A non-impact gap of up to "
+        f"{int(round(cfg.impact_gap_m / cfg.grid_m)) + 1} consecutive samples "
+        f"(span <= {cfg.impact_gap_m:g} m) stays inside the run; a nodata gap of up to "
+        f"{int(round(cfg.nodata_gap_m / cfg.grid_m)) + 1} samples (span <= {cfg.nodata_gap_m:g} m) "
+        "does not end it, and a longer one ends it with censored = 1. A nodata sample neither "
+        "resets nor adds to the non-impact count. The same convention sets the valley-wall run "
+        f"({cfg.wall_run_m:g} m = {int(round(cfg.wall_run_m / cfg.grid_m)) + 1} samples) and the "
+        f"channel-run merge ({cfg.channel_merge_gap_m:g} m, 14.18).",
+        f"- **Channel width (14.18).** channel_width_m is the length of the chosen channel run "
+        f"counted in whole pixels: last sample minus first sample plus one pixel ({cfg.grid_m:g} m). "
+        f"Where no channel run is found it is {cfg.grid_m:g} m (one pixel, an upper bound).",
+        "- **Censored model (14.7).** The Weibull AFT uses lifelines' robust (sandwich) standard "
+        "errors, not clustered on blocks; it is a sensitivity conditional on reach > 0.",
+        "- **Percentile intervals (8.4, 14.15).** The 1 km pairs percentile interval is computed "
+        "for the primary run and the placebo's primary variant only; sensitivity runs report the "
+        "14.15 interval alone.",
+        "- **E-values (8.7, 14.9).** Each model uses its own SD(y): Model A the SD of y in its "
+        "rows, Model B the SD of y_L - y_R in its pairs. The 14.9 prevalence of overtopped is "
+        "taken over the run's full analysis set. 14.10 narrowness uses Model A's SD(y) for both "
+        "models, as before.",
         "",
         "Primary interval (14.15): wild cluster bootstrap-t, null imposed, CR1, Rademacher, "
         f"{cfg.wild_bootstrap_draws} draws, {cfg.bootstrap_block_km:g} km blocks; p(0) reported; "
-        "interval = b0 with p(b0) > 0.05. Logistic: cluster-robust SE with a t critical value "
+        f"interval = b0 with p(b0) > {cfg.interval_alpha:g}. Logistic: cluster-robust SE with a t critical value "
         "(blocks - 1 df), approximate. Beside it: the 1 km pairs block bootstrap percentile "
         f"interval ({cfg.bootstrap_reps} reps), {S.PERCENTILE_LABEL}.",
         "",
@@ -632,14 +711,15 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
          f"(dropped {sup.get('dropped')}), {sup.get('kept_segments')} segments; p bounds "
          f"{tuple(round(b, 3) for b in sup.get('bounds', ()))}. Too thin to interpret: "
          f"{sup.get('too_thin')}." if "error" not in sup else sup["error"]),
-        f"Rows dropped for a missing model value (curvature at the line end): "
-        f"{primary['dropped_missing']}.",
+        f"Rows without every Model A value (curvature at the line end): "
+        f"{primary['dropped_missing']}; these rows can still enter Model B.",
         "",
         "## Primary results",
         "",
         f"Model A: {primary['a_rows']} rows, {primary['a_stations']} stations, "
         f"{primary['a_segments']} segments, {primary['a_blocks']} blocks. "
-        f"Model B: {primary['b_info']['stations']} stations, {primary['b_blocks']} blocks; "
+        f"Model B: {primary['b_info']['stations']} stations, {primary['b_segments']} segments, "
+        f"{primary['b_blocks']} blocks; "
         f"{primary['b_info']['stations_large_diff']} with |F_L - F_R| >= "
         f"{cfg.model_b_min_forest_diff:g} (minimum {cfg.model_b_min_stations}); "
         f"informative: {primary['b_info']['informative']}.",
@@ -655,7 +735,7 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
                 continue
             pc = r.get("percentile", {}).get("interval", (np.nan, np.nan))
             iqr = primary["iqr_F"]
-            e = S.evalue_for(r, primary["sd"][y])
+            e = S.evalue_for(r, primary["sd"][y] if model == "A" else primary["sd_b"][y])
             nar = S.is_reasonably_narrow(r["interval"], primary["sd"][y], float(cfg.narrow_effect_sd))
             lines.append(
                 f"| {model} | {OUT_NAMES[y]} | {_ci(r)} | [{_f(pc[0])}, {_f(pc[1])}] | "
@@ -670,6 +750,10 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
                      f"(prevalence {primary['prevalence']:.0%}) | "
                      f"{S.or_narrow(over['or_interval'], cfg.narrow_or_low, cfg.narrow_or_high)} |")
     lines += ["", "log1p distance: exp(beta1) - 1 is the proportional change in (1 + distance).",
+              "",
+              "E-value (8.7): an E-value of 2 means an unmeasured factor would need to be "
+              "associated with both forest and flood reach by a risk ratio of 2 each to erase "
+              "the result. The CI E-value is 1 when the interval includes the null.",
               "", "### Censored model, conditional on reach > 0 (14.7, sensitivity)", ""]
     for y, r in primary.get("aft", {}).items():
         if "error" in r:
@@ -683,28 +767,47 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
               "Model A reach height and Model B reach height, 14.15 interval. All runs, all outcomes: "
               "`stats_results.csv`. Forest plots: `fig_forest_plot_A_height.png`, "
               "`fig_forest_plot_B_height.png`.", "",
-              "| Run | Group | Note | A rows | A height beta1 [interval], p(0) | A log1p distance beta1 [interval], p(0) | B stations | B height beta1 [interval], p(0) |",
+              "| Run | Group | Note | A rows | A height beta1 [interval], p(0) | A log1p distance beta1 [interval], p(0) | B stations / segments | B height beta1 [interval], p(0) |",
               "|---|---|---|---:|---|---|---:|---|"]
     for name, run in runs.items():
         group, note = notes[name]
         lines.append(f"| {name} | {group} | {note} | {run['a_rows']} | {_ci(run['A']['y_height'])} | "
-                     f"{_ci(run['A']['y_logdist'])} | {run['b_info']['stations']} | "
-                     f"{_ci(run['B']['y_height'])} |")
+                     f"{_ci(run['A']['y_logdist'])} | {run['b_info']['stations']} / "
+                     f"{run['b_segments']} | {_ci(run['B']['y_height'])} |")
     for r in table[table["error"].notna() & (table["outcome"] == "all")].itertuples():
         lines.append(f"| {r.run} | {r.group} | {r.note} | | {r.error} | | | |")
+    if breaks:
+        lines += ["", f"Section breaks at km {', '.join(f'{b:g}' for b in breaks)} "
+                      f"({' then '.join(rivers)}). The first-section-only run (14.16 rule 5) uses "
+                      f"the {rivers[0] if rivers else 'first river'} above the first break. Other "
+                      "rivers joining below a confluence carried their own flood water in the same "
+                      "storm."]
+    lines += ["", "### Sign flips across sensitivity runs (8.10)", "",
+              "A run flips when its beta1 has the opposite sign to the primary run's for the same "
+              "model and outcome (Model A and B reach height and log1p distance, Model A "
+              "overtopped). Any flip makes the verdict inconclusive. All runs are compared, "
+              "including the literal steep filter. Full list: `stats_sign_flips.csv`.", ""]
+    if flips:
+        lines += ["| Run | Model | Outcome | Primary beta1 | Run beta1 | Run p(0) |",
+                  "|---|---|---|---:|---:|---:|"]
+        lines += [f"| {f['run']} | {f['model']} | {OUT_NAMES[f['outcome']]} | "
+                  f"{_f(f['primary_beta'])} | {_f(f['run_beta'])} | "
+                  f"{_f(f['run_p0'], 3) if f['run_p0'] is not None else 'NA'} |" for f in flips]
+    else:
+        lines.append("No run flips sign.")
     nv = runs.get("river_not_visible rows as reach 0")
     lines += ["", f"(d) The real event's 14.20 sensitivity (river_not_visible rows included as reach 0) "
                   f"is reported: {'yes, row above' if nv else 'NO'}.", ""]
     if placebo_runs:
         lines += ["## Placebo through the same models (8.9)", "",
                   "Same Model A and Model B code and the same 14.15 interval as the real event.", "",
-                  "| Variant | Note | A rows | A reach height | A log1p distance | A overtopped | B stations | B reach height | B log1p distance |",
+                  "| Variant | Note | A rows | A reach height | A log1p distance | A overtopped | B stations / segments | B reach height | B log1p distance |",
                   "|---|---|---:|---|---|---|---:|---|---|"]
         for name, run in placebo_runs.items():
             note = NULL_PUSH if "14.20" in name else ""
             lines.append(f"| {name} | {note} | {run['a_rows']} | {_ci(run['A']['y_height'])} | "
                          f"{_ci(run['A']['y_logdist'])} | {_ci(run['A']['y_over'])} | "
-                         f"{run['b_info']['stations']} | {_ci(run['B']['y_height'])} | "
+                         f"{run['b_info']['stations']} / {run['b_segments']} | {_ci(run['B']['y_height'])} | "
                          f"{_ci(run['B']['y_logdist'])} |")
         if placebo_drop:
             hi, lo = placebo_drop["High"], placebo_drop["Low"]
@@ -716,7 +819,7 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
                       "",
                       "The 14.20 assumed-zero variant adds those rows with reach 0; it "
                       f"{NULL_PUSH}, so it is not evidence that the placebo is null."]
-    lines += ["", "## Files", "", "- `stats_results.csv`, `stats_summary.json`",
+    lines += ["", "## Files", "", "- `stats_results.csv`, `stats_summary.json`, `stats_sign_flips.csv`",
               "- `fig_propensity.png`, `fig_model_b_forest_difference.png`, "
               "`fig_forest_plot_A_height.png`, `fig_forest_plot_B_height.png`", ""]
     return "\n".join(lines) + "\n"

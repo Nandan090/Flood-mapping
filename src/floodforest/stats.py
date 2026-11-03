@@ -86,6 +86,10 @@ MODEL_COLUMNS = ("forest_frac", "channel_width_m", "gradient", "valley_width_m",
                  "wall_slope_deg", "valley_wall_found", "bank_slope_deg", "log10_upa",
                  "outer_bend", "curvature", "bank_elev_m", "channel_resolved", "river_km",
                  "river_section", "side", "block_id", "segment_id", "station_id")
+# Model B needs only its own variables (8.3): forest, the differenced controls, the
+# outcomes it fits, and the identifiers used to pair and cluster.
+MODEL_B_COLUMNS = ("forest_frac",) + MODEL_B_DIFFS + ("side", "block_id", "segment_id",
+                                                      "station_id", "river_section")
 
 
 def model_frame(table: pd.DataFrame, forest_col: str, dem: str = "fab",
@@ -93,8 +97,11 @@ def model_frame(table: pd.DataFrame, forest_col: str, dem: str = "fab",
     """Model columns with standard names (8.2) for the rows given.
 
     Wall slope is 0 where no valley wall was found and valley_wall_found carries
-    that (user decision). Rows missing any other model value are dropped and
-    counted in .attrs["dropped_missing"].
+    that (user decision). a_ok marks rows with every Model A value; b_ok marks rows
+    with Model B's own variables (8.3), so a bank missing only a Model A control
+    (for example curvature at the line end) can still pair in Model B. Rows usable
+    by neither are dropped. attrs: dropped_missing (rows not usable by Model A) and
+    dropped_missing_b (rows not usable by Model B).
     """
     outcome_cols = outcome_cols or {
         "y_height": f"reach_height_m_{dem}", "y_dist": f"reach_distance_m_{dem}",
@@ -117,10 +124,13 @@ def model_frame(table: pd.DataFrame, forest_col: str, dem: str = "fab",
     for name, col in outcome_cols.items():
         out[name] = pd.to_numeric(t[col], errors="coerce")
     out["y_logdist"] = np.log1p(out["y_dist"])
-    needed = list(MODEL_COLUMNS) + ["y_height", "y_dist", "y_over"]
-    ok = out[needed].notna().all(axis=1)
-    out = out[ok].copy()
-    out.attrs["dropped_missing"] = int((~ok).sum())
+    a_ok = out[list(MODEL_COLUMNS) + ["y_height", "y_dist", "y_over"]].notna().all(axis=1)
+    b_ok = out[list(MODEL_B_COLUMNS) + ["y_height", "y_dist"]].notna().all(axis=1)
+    out["a_ok"], out["b_ok"] = a_ok, b_ok
+    dropped_a, dropped_b = int((~a_ok).sum()), int((~b_ok).sum())
+    out = out[a_ok | b_ok].copy()
+    out.attrs["dropped_missing"] = dropped_a
+    out.attrs["dropped_missing_b"] = dropped_b
     return out
 
 
@@ -172,6 +182,25 @@ def paired_frame(df: pd.DataFrame, outcomes=("y_height", "y_logdist", "y_over"))
     for name in outcomes:
         out[f"d_{name}"] = (left[name] - right[name]).to_numpy()
     return out
+
+
+def sign_flips(primary: dict, runs: dict, keys) -> list[dict]:
+    """8.10: sensitivity runs whose beta1 sign differs from the primary run's.
+
+    primary and each run map (model, outcome) -> result dict with "beta" (or "error").
+    Only pairs where both estimates exist are compared.
+    """
+    flips = []
+    for name, run in runs.items():
+        for key in keys:
+            p, r = primary.get(key, {}), run.get(key, {})
+            if "beta" not in p or "beta" not in r:
+                continue
+            if np.sign(p["beta"]) != np.sign(r["beta"]):
+                flips.append({"run": name, "model": key[0], "outcome": key[1],
+                              "primary_beta": p["beta"], "run_beta": r["beta"],
+                              "run_p0": r.get("p0")})
+    return flips
 
 
 def model_b_rhs() -> str:
@@ -251,7 +280,7 @@ def decide_verdict(checks: dict) -> tuple[str, list[str]]:
     checks holds booleans and short notes prepared by the runner:
       a_height_neg_sig, b_height_neg_sig, dist_same_sign, labels_same_sign,
       dems_same_sign, placebo_null, validation_ok, enough_blocks, overlap_ok,
-      model_b_informative, validated, all_include_null, all_narrow.
+      model_b_informative, validated, no_sign_flips, all_include_null, all_narrow.
     """
     caps = []
     if not checks["enough_blocks"]:
@@ -264,6 +293,8 @@ def decide_verdict(checks: dict) -> tuple[str, list[str]]:
         caps.append("not validated (14.13)")
     if not checks["placebo_null"]:
         caps.append("placebo not null (8.9): the main result cannot be trusted")
+    if not checks["no_sign_flips"]:
+        caps.append("sign flips across sensitivity runs (8.10)")
     protective = [
         ("Model A reach height: beta < 0, interval excludes 0", checks["a_height_neg_sig"]),
         ("Model B reach height: beta < 0, interval excludes 0", checks["b_height_neg_sig"]),

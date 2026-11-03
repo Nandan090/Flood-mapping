@@ -44,6 +44,7 @@ corridor_buffer_m: 2000 # centerline buffered to make the corridor
 paths:
   data: data
   outputs: outputs
+  results: results # tracked results (validation summaries read by stats)
 
 # ---------------------------------------------------------------------------
 # Geometry (sections 6 and 7)
@@ -141,6 +142,13 @@ narrow_or_low: 0.67
 narrow_or_high: 1.50
 overtop_prevalence_for_rr: 0.15
 reach_end_shift_km: 5 # sensitivity: move the reach end both ways (14.5)
+interval_alpha: 0.05 # 95% intervals; "excludes 0" means p(0) <= this (14.15)
+# Sensitivity filters (8.8, 14.21; steep-terrain choice by the user)
+steep_bank_top_slope_max_deg: 45 # primary steep filter: grid_m x tan(bank-top slope) <= 10 m
+steep_unc_max_m: 10 # reach_height_unc_m limit in the 8.8 steep-terrain variants
+terrace_bank_slope_max_deg: 15 # terraces-only run (8.8)
+usable_length_sensitivity_m: 300 # rows with usable_length_m >= this (14.21)
+validation_min_group_n: 8 # forest-bias check needs this many points per group
 terraces_bank_slope_max_deg: 15
 reach_height_unc_max_m: 10
 gradient_window_m: 500
