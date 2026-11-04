@@ -300,8 +300,8 @@ events:
     # limit only catches a mistyped point.
     start_link_max_m: 250
     # Fixed start (14.16): the draft starts at this point, snapped to the OSM line.
-    # Corrected by the user (2026-11-03) in Google Earth Pro.
-    start_point: { name: Rasuwagadhi border crossing, lon: 85.3748515, lat: 28.2761525, rule: fixed_point }
+    # First vertex of the user-verified centerline (2026-11-04).
+    start_point: { name: Rasuwagadhi border crossing, lon: 85.3769184, lat: 28.2779872, rule: fixed_point }
     # The draft is built 72 km so bhotekoshi2026 can share it (14.16 rule 2); this
     # event's reach is still reach_start_km to reach_end_km on it.
     draft_length_km: 72
@@ -311,11 +311,12 @@ events:
     reach_end_km: 35 # from the draft paper, until the user replaces it
     rivers: [Bhotekoshi, Trishuli]
     section_breaks_km: null # user confirms confluences inside the reach
-    # Rasuwagadhi = the user-corrected start point. Syaphrubesi is from the
-    # search-aid line (corridor_points.csv km 14); the user confirms it.
+    # Rasuwagadhi = the verified start (first vertex of the verified centerline).
+    # Syaphrubesi confirmed by the user (2026-11-04). Exclusions are read from
+    # data/lende2025/exclusions.geojson (7 features, verified by the user).
     landmarks:
-      - { name: Rasuwagadhi, lon: 85.3748515, lat: 28.2761525 }
-      - { name: Syaphrubesi, lon: 85.34287, lat: 28.16661 }
+      - { name: Rasuwagadhi, lon: 85.3769184, lat: 28.2779872 }
+      - { name: Syaphrubesi, lon: 85.3428157, lat: 28.1660241 }
     # WorldCover has no 2024 map (user decision 2026-11-03): the 2021 map stands in
     # where Dynamic World has no observation in the S2 pre window (14.23 a). Recorded
     # in provenance and the report; rows using it have forest_source worldcover or mixed.
