@@ -311,3 +311,12 @@ def test_river_not_visible_sensitivity_adds_only_those_rows_with_zero_reach():
     assert list(out.analysis_set) == [1, 1, 0, 0]
     assert out.reach_distance_m_fab.iloc[1] == 0 and out.overtopped_fab.iloc[1] == 0
     assert t.analysis_set.iloc[1] == 0  # the input table is not changed
+
+
+def test_placebo_labels_come_from_each_events_windows():
+    from floodforest.stats_run import placebo_labels
+    cfg = load_config()
+    assert placebo_labels(cfg.events.melamchi2021) == {
+        "placebo_year": 2018, "real_year": 2020, "real_season": "Oct-Dec 2020"}
+    assert placebo_labels(cfg.events.lende2025) == {
+        "placebo_year": 2022, "real_year": 2024, "real_season": "Oct-Dec 2024"}

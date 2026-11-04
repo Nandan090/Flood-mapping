@@ -385,15 +385,18 @@ def run_stats(event_key: str, config_path: str | Path | None = None,
         zt = pbase.assign(in_set=z["analysis_set"] == 1)
         for k in ("reach_distance_m", "reach_height_m", "overtopped", "censored"):
             zt[f"{k}_fab"] = z[f"{k}_fab"]
-        p20 = pbase.merge(T[["station_id", "side", forest]].rename(columns={forest: "forest_2020"}),
+        lab = placebo_labels(event)
+        real_col = f"forest_{lab['real_year']}"
+        p20 = pbase.merge(T[["station_id", "side", forest]].rename(columns={forest: real_col}),
                           on=["station_id", "side"], how="left")
         p20.index = pbase.index
         variants = {
-            "placebo: kept rows (primary)": (frame(pbase), "2018 forest, analysis set as built"),
+            "placebo: kept rows (primary)": (frame(pbase),
+                                             f"{lab['placebo_year']} forest, analysis set as built"),
             "placebo: + 14.20 assumed-zero rows": (frame(zt), NULL_PUSH),
-            "placebo: 2020 forest": (frame(p20, p20["in_set"] & p20["forest_2020"].notna(),
-                                           forest_col="forest_2020"),
-                                     "real event's Oct-Dec 2020 forest (sensitivity)"),
+            f"placebo: {lab['real_year']} forest": (
+                frame(p20, p20["in_set"] & p20[real_col].notna(), forest_col=real_col),
+                f"real event's {lab['real_season']} forest (sensitivity)"),
         }
         for name, (df, note) in variants.items():
             print(f"Placebo: {name} ({len(df)} rows) ...")
@@ -535,6 +538,20 @@ def _verdict(primary, runs, placebo_runs, cfg, flips):
     }
     verdict, reasons = S.decide_verdict(checks)
     return checks, verdict, reasons
+
+
+def placebo_labels(event) -> dict:
+    """Year and season labels for the placebo runs, from the event's own windows:
+    the placebo forest is from the placebo S2 pre window, the sensitivity forest from
+    the real event's S2 pre window (14.2)."""
+    import calendar
+
+    from .dates import composite_year
+    real, plac = event.s2_pre, event.placebo.s2_pre
+    real_year = composite_year(real.start, real.end)
+    months = "-".join(calendar.month_abbr[int(d[5:7])] for d in (real.start, real.end))
+    return {"placebo_year": composite_year(plac.start, plac.end), "real_year": real_year,
+            "real_season": f"{months} {real_year}"}
 
 
 def _placebo_dropping(P, forest, forest_terciles) -> dict:
@@ -831,7 +848,8 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
             lines += ["",
                       f"(c) The placebo drops {hi[0]:.0%} of High-forest rows for river_not_visible "
                       f"({hi[1]} of {hi[2]}), against {lo[0]:.0%} of Low-forest rows ({lo[1]} of {lo[2]}) "
-                      "(terciles of the 2018 forest over all in-reach rows). The placebo therefore "
+                      f"(terciles of the {placebo_labels(event)['placebo_year']} forest over all "
+                      "in-reach rows). The placebo therefore "
                       "cannot speak for the densest forest.",
                       "",
                       "The 14.20 assumed-zero variant adds those rows with reach 0; it "
