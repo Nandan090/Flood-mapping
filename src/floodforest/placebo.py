@@ -310,10 +310,12 @@ def write_placebo_report(event_key: str, config_path: str | Path | None = None) 
     real_labels = pd.read_csv(real_out / "transects_labels.csv")
     provenance = json.loads((plac_out / "provenance.json").read_text(encoding="utf-8"))
 
-    # Rows: flags, the 2020-forest sensitivity column (read from the real table).
+    yl = report_years(cfg, event_key, key)
+    real_col = f"{forest_col}_{yl['real_pre']}"
+    # Rows: flags, the real event's forest as a sensitivity column (read from the real table).
     plac["worldcover_standin"] = standin_flag(plac, width)
     real_forest = real[["station_id", "side", forest_col]].rename(
-        columns={forest_col: f"{forest_col}_2020"})
+        columns={forest_col: real_col})
     plac = plac.merge(real_forest, on=["station_id", "side"], how="left", validate="one_to_one")
 
     # Detections in the placebo combined label.
@@ -365,11 +367,11 @@ def write_placebo_report(event_key: str, config_path: str | Path | None = None) 
     }
     sens = pd.DataFrame({k: outcome_summary(v) for k, v in sens_rows.items()}).T
     terc = {
-        "2018 forest (primary)": tercile_table(plac, forest_col),
-        "2018 forest, without stand-in rows": tercile_table(plac[plac.worldcover_standin == 0],
-                                                            forest_col),
-        "2020 forest (sensitivity)": tercile_table(plac, f"{forest_col}_2020"),
-        "real event, 2020 forest": tercile_table(real, forest_col),
+        f"{yl['plac_pre']} forest (primary)": tercile_table(plac, forest_col),
+        f"{yl['plac_pre']} forest, without stand-in rows": tercile_table(
+            plac[plac.worldcover_standin == 0], forest_col),
+        f"{yl['real_pre']} forest (sensitivity)": tercile_table(plac, real_col),
+        f"real event, {yl['real_pre']} forest": tercile_table(real, forest_col),
     }
     a_plac = plac[plac.analysis_set == 1].copy()
     a_plac["tercile"] = forest_terciles(a_plac[forest_col])
@@ -394,7 +396,7 @@ def write_placebo_report(event_key: str, config_path: str | Path | None = None) 
             "exclude_reasons", f"reach_distance_m_{PRIMARY_DEM}", f"reach_height_m_{PRIMARY_DEM}",
             f"overtopped_{PRIMARY_DEM}", f"censored_{PRIMARY_DEM}", forest_col,
             f"forest_source_{width}", f"forest_source_worldcover_frac_{width}",
-            "worldcover_standin", f"{forest_col}_2020", "patch_id", "edge_category"]
+            "worldcover_standin", real_col, "patch_id", "edge_category"]
     written = []
 
     def save(frame, name, index=False):
@@ -411,11 +413,11 @@ def write_placebo_report(event_key: str, config_path: str | Path | None = None) 
     save(per_km, "placebo_vs_real_per_km.csv")
     save(lab, "placebo_vs_real_by_label.csv")
     written += _figures(out_dir, km_plac, km_real, plac, real, det, ids, grid, event, cfg, samples,
-                        river_m, rasters)
+                        river_m, rasters, yl)
 
     text = _report_text(event_key, key, event, cfg, provenance, summary, sens, terc,
                         standin_by_tercile, flagged, plac, real, det, det_by_cat, reach_rows, lab,
-                        area, _km_ranges, written, out_dir)
+                        area, _km_ranges, written, out_dir, yl)
     report = out_dir / "PLACEBO_REPORT.md"
     report.write_text(text, encoding="utf-8")
     written.append(report)
@@ -427,6 +429,39 @@ def write_placebo_report(event_key: str, config_path: str | Path | None = None) 
     for path in written:
         print(path.relative_to(PROJECT_ROOT))
     return written
+
+
+def season(window) -> str:
+    """'Oct-Dec 2020' for a window inside one calendar year."""
+    import calendar
+
+    from .dates import composite_year
+    months = "-".join(calendar.month_abbr[int(d[5:7])] for d in (window.start, window.end))
+    return f"{months} {composite_year(window.start, window.end)}"
+
+
+def report_years(cfg, event_key: str, key: str) -> dict:
+    """Years and seasons for the placebo report, from each event's own config windows."""
+    from .dates import composite_year
+    real, plac = getattr(cfg.events, event_key), getattr(cfg.events, key)
+    standin = getattr(plac, "worldcover_standin", None)
+    return {
+        "plac_pre": composite_year(plac.s2_pre.start, plac.s2_pre.end),
+        "plac_post": composite_year(plac.s2_post.start, plac.s2_post.end),
+        "plac_pre_season": season(plac.s2_pre),
+        "plac_post_season": season(plac.s2_post),
+        "real_pre": composite_year(real.s2_pre.start, real.s2_pre.end),
+        "real_pre_season": season(real.s2_pre),
+        "real_event": int(real.event_dates[0][:4]),
+        "standin_year": standin.year if standin is not None else None,
+        "canopy_year": int(cfg.canopy_height_year),
+        "centerline_traced_on": getattr(real, "centerline_traced_on", None),
+        "validation_section": getattr(real, "validation_spec_section", None),
+    }
+
+
+def _placebo_label(yl: dict) -> str:
+    return f"placebo {yl['plac_pre']}-{str(yl['plac_post'])[2:]}"
 
 
 def _read_first_band(path: Path, grid: dict, crs: str) -> np.ndarray:
@@ -442,7 +477,7 @@ def _read_first_band(path: Path, grid: dict, crs: str) -> np.ndarray:
 
 
 def _figures(out_dir, km_plac, km_real, plac, real, det, ids, grid, event, cfg, samples, river_m,
-             rasters) -> list[Path]:
+             rasters, yl) -> list[Path]:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -454,8 +489,8 @@ def _figures(out_dir, km_plac, km_real, plac, real, det, ids, grid, event, cfg, 
     written = []
     fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True, dpi=120)
     for ax, side in zip(axes, ("left", "right")):
-        for frame, name, colour in ((km_real, "real event 2021", "#2b6cb0"),
-                                    (km_plac, "placebo 2018-19", "#e8412c")):
+        for frame, name, colour in ((km_real, f"real event {yl['real_event']}", "#2b6cb0"),
+                                    (km_plac, _placebo_label(yl), "#e8412c")):
             part = frame[frame.side == side].sort_values("segment_id")
             ax.step(part.segment_id + 0.5, part.share_overtopped, where="mid", label=name,
                     color=colour)
@@ -472,8 +507,8 @@ def _figures(out_dir, km_plac, km_real, plac, real, det, ids, grid, event, cfg, 
     written.append(path)
 
     fig, ax = plt.subplots(figsize=(6, 4), dpi=120)
-    for frame, name, colour in ((real, "real event 2021", "#2b6cb0"),
-                                (plac, "placebo 2018-19", "#e8412c")):
+    for frame, name, colour in ((real, f"real event {yl['real_event']}", "#2b6cb0"),
+                                (plac, _placebo_label(yl), "#e8412c")):
         v = frame.loc[frame.analysis_set == 1, f"reach_distance_m_{PRIMARY_DEM}"].dropna()
         v = np.sort(v.to_numpy(float))
         if v.size:
@@ -528,7 +563,8 @@ def _figures(out_dir, km_plac, km_real, plac, real, det, ids, grid, event, cfg, 
 
     legend = [Patch(color=CATEGORY_COLOURS[c], label=c.replace("_", " ")) for c in CATEGORIES]
     written += sheets.write_sheets(out_dir, "sheet_placebo_detections",
-                                   "Placebo combined-label detections on Oct-Dec 2019 Sentinel-2",
+                                   "Placebo combined-label detections on "
+                                   f"{yl['plac_post_season']} Sentinel-2",
                                    grid, samples, river_m, draw, legend)
     return written
 
@@ -543,7 +579,7 @@ def _pct(v):
 
 def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, standin_by_tercile,
                  flagged, plac, real, det, det_by_cat, reach_rows, lab, area, km_ranges, written,
-                 out_dir) -> str:
+                 out_dir, yl) -> str:
     sp, sr = summary["placebo"], summary["real_event"]
     wc = provenance.get("worldcover_exported", {})
     fc = event.flood_check
@@ -574,7 +610,8 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
         f"(`flood_check`, {fc.placebo_pair_review.date}; record `{fc.record}`). That confirmation "
         "covers notable floods only; local floods, high flows and bank erosion are not ruled out.",
         "",
-        "The real event's files were only read. The real event's Oct-Dec 2020 forest baseline is "
+        f"The real event's files were only read. The real event's {yl['real_pre_season']} forest "
+        "baseline is "
         "unchanged; it is used here only as a labelled sensitivity.",
         "",
         "## Expected outcome and result",
@@ -584,7 +621,8 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
         "(beta1 not distinguishable from zero) is fitted by the `stats` step through the same "
         f"Model A and Model B code as the real event: see `outputs/{event_key}/stats/STATS_REPORT.md`.",
         "",
-        "| Analysis set, combined label, FABDEM | Placebo 2018-19 | Real event 2021 |",
+        f"| Analysis set, combined label, FABDEM | {_placebo_label(yl).capitalize()} | "
+        f"Real event {yl['real_event']} |",
         "|---|---:|---:|",
         f"| Rows (stations) | {int(sp.analysis_rows)} ({int(sp.analysis_stations)}) | "
         f"{int(sr.analysis_rows)} ({int(sr.analysis_stations)}) |",
@@ -668,8 +706,11 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
                      .to_numpy())
         lines.append(f"- {side}: {km_ranges(km, cfg.station_spacing_m)}")
     lines += ["", "## Rows lost because the river is not visible (14.20)", ""]
-    for name, t in (("Placebo (2018 forest)", plac), ("Real event (2020 forest)", real)):
+    nv_stations = {}
+    for name, t in ((f"Placebo ({yl['plac_pre']} forest)", plac),
+                    (f"Real event ({yl['real_pre']} forest)", real)):
         nv =t[t["exclude_reasons"].fillna("").str.contains("river_not_visible")]
+        nv_stations[t is plac] = nv.station_id.nunique()
         kept = t[t["analysis_set"] == 1]
         km = np.sort(nv.drop_duplicates("station_id")["river_km"].to_numpy())
         lines.append(
@@ -686,22 +727,42 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
         f"The placebo drops {share['High']:.0%} of High-forest rows for river_not_visible "
         f"({int(count['High'])} of {int(total['High'])}), against {share['Low']:.0%} of Low-forest "
         f"rows ({int(count['Low'])} of {int(total['Low'])}); Mid {share['Mid']:.0%} (terciles of "
-        "the 2018 forest over all in-reach rows). The placebo therefore cannot speak for the "
-        "densest forest.",
+        f"the {yl['plac_pre']} forest over all in-reach rows)."
+        + (" The placebo therefore cannot speak for the densest forest."
+           if share["High"] > share["Low"] else ""),
     ]
+    if nv_stations[True] > nv_stations[False]:
+        lines += [
+            "",
+            "Rule 14.20 keeps a row only if bare or impacted ground within 30 m of the station "
+            f"shows where the river is. After the {yl['real_event']} flood the bed was bare "
+            "almost everywhere; in an ordinary year a narrow river under canopy is often "
+            "invisible at 10 m. The placebo analysis set therefore has fewer rows, mostly fewer "
+            "forested gorge rows, than the real event. The 14.20 sensitivity (those rows with "
+            "reach 0) is in the table at the end of the forest section.",
+        ]
+    else:
+        lines += [
+            "",
+            "Rule 14.20 keeps a row only if bare or impacted ground within 30 m of the station "
+            "shows where the river is. The placebo does not lose more stations to this rule than "
+            "the real event. The 14.20 sensitivity (those rows with reach 0) is in the table at "
+            "the end of the forest section.",
+        ]
+    hansen = provenance.get("hansen", {})
+    hansen_text = (f"skipped for {yl['plac_pre']}" if not hansen.get("applied")
+                   else f"loss years {cfg.hansen_loss_from_year}-{hansen.get('loss_through_year')}")
+    canopy_when = "after" if yl["canopy_year"] > yl["plac_pre"] else "before"
+    standin_text = (f"the WorldCover {yl['standin_year']} stand-in (flagged rows)"
+                    if yl["standin_year"] is not None else "no stand-in (none configured)")
+    traced = yl["centerline_traced_on"]
     lines += [
-        "",
-        "Rule 14.20 keeps a row only if bare or impacted ground within 30 m of the station shows "
-        "where the river is. After the 2021 flood the bed was bare almost everywhere; in an "
-        "ordinary year a narrow river under canopy is often invisible at 10 m. The placebo "
-        "analysis set therefore has fewer rows, mostly fewer forested gorge rows, than the real "
-        "event. The 14.20 sensitivity (those rows with reach 0) is in the table at the end of "
-        "the forest section.",
         "",
         "## Forest exposure",
         "",
-        "Primary (14.2): forest from the placebo pre window (Oct-Dec 2018), with Dynamic World, "
-        "ETH canopy height 2020 and the Hansen rule (skipped for 2018, 14.3). "
+        f"Primary (14.2): forest from the placebo pre window ({yl['plac_pre_season']}), with "
+        f"Dynamic World, ETH canopy height {yl['canopy_year']} and the Hansen rule "
+        f"({hansen_text}, 14.3). "
         f"{wc.get('reason', '')}",
         "",
         f"- Rows using the WorldCover stand-in (`worldcover_standin` = 1): {int(len(flagged))} of "
@@ -717,7 +778,7 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
         km = np.sort(flagged.loc[flagged.side == side, "river_km"].to_numpy())
         lines.append(f"- {side} bank, river km: {km_ranges(km, cfg.station_spacing_m)}")
     lines += [
-        "- Stand-in analysis rows per 2018 forest tercile: "
+        f"- Stand-in analysis rows per {yl['plac_pre']} forest tercile: "
         + ", ".join(f"{t} {n}" for t, n in standin_by_tercile.items()),
         "",
         "Descriptive only; the models are in the `stats` report. Terciles are "
@@ -750,11 +811,17 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
         "it covers only rows whose river was visible, which leaves out much of the densest forest.",
         "- Diagnostic categories use 10 m imagery and a 30 m DEM; they are review aids, not causes. "
         "Visual reviews exist only for the spots in the review file.",
-        "- The placebo forest uses ETH canopy height 2020 (after the placebo period) and, where "
-        "Dynamic World has no 2018 image, the WorldCover 2020 stand-in (flagged rows).",
-        "- The 2021 validation edges (14.25) belong to the real event and are not applicable here.",
-        "- The centerline was traced on post-2021 imagery; the placebo channel and bank tops come "
-        "from the 2018 composite, so distances to the line are approximate in the lower valley.",
+        f"- The placebo forest uses ETH canopy height {yl['canopy_year']} ({canopy_when} the "
+        f"placebo period) and, where Dynamic World has no {yl['plac_pre']} image, {standin_text}.",
+        f"- The {yl['real_event']} validation edges"
+        + (f" ({yl['validation_section']})" if yl["validation_section"] else "")
+        + " belong to the real event and are not applicable here.",
+        (f"- The centerline was traced on {traced}; the placebo channel and bank tops come "
+         f"from the {yl['plac_pre']} composite, so distances to the line are approximate in the "
+         "lower valley." if traced else
+         "- The imagery the centerline was traced on is not recorded in config "
+         f"(centerline_traced_on); the placebo channel and bank tops come from the "
+         f"{yl['plac_pre']} composite, so distances to the line may be approximate."),
         "",
         "## Files",
         "",

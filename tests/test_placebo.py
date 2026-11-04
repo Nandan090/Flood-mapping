@@ -320,3 +320,18 @@ def test_placebo_labels_come_from_each_events_windows():
         "placebo_year": 2018, "real_year": 2020, "real_season": "Oct-Dec 2020"}
     assert placebo_labels(cfg.events.lende2025) == {
         "placebo_year": 2022, "real_year": 2024, "real_season": "Oct-Dec 2024"}
+
+
+def test_placebo_report_years_come_from_each_events_windows():
+    from floodforest.placebo import report_years
+    cfg = load_config()
+    m = report_years(cfg, "melamchi2021", "melamchi2021_placebo")
+    assert (m["plac_pre"], m["plac_post"], m["real_pre"], m["real_event"]) == (2018, 2019, 2020, 2021)
+    assert (m["plac_post_season"], m["real_pre_season"], m["standin_year"]) == (
+        "Oct-Dec 2019", "Oct-Dec 2020", 2020)
+    lende = report_years(cfg, "lende2025", "lende2025_placebo")
+    assert (lende["plac_pre"], lende["plac_post"], lende["real_pre"], lende["real_event"]) == (
+        2022, 2023, 2024, 2025)
+    assert (lende["plac_pre_season"], lende["plac_post_season"], lende["standin_year"]) == (
+        "Oct-Dec 2022", "Oct-Dec 2023", 2021)
+    assert lende["centerline_traced_on"] is None and lende["validation_section"] == "14.13"
