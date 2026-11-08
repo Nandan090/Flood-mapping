@@ -16,6 +16,7 @@ from .config import PROJECT_ROOT, load_config, rebuild_variants, variant_key
 KEEP_FROM_FETCH = ("event", "crs", "grid_m", "corridor_buffer_m", "grid", "assets_verified",
                    "copernicus_dem_notice", "hansen", "worldcover_exported",
                    "worldcover_not_exported", "exclude_dates", "known_floods_between",
+                   "known_floods_after",
                    "composites", "files", "s1_geometry")
 
 

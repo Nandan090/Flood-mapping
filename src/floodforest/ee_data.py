@@ -72,6 +72,7 @@ def fetch_event(event_key: str, config_path: str | Path | None = None,
         print(standin["note"])
     groups = _scene_groups(cfg, event, region)
     _print_scenes(groups)
+    _print_known_floods(event, event_key)
 
     out_dir = PROJECT_ROOT / cfg.paths.data / event_key / "rasters"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -107,6 +108,7 @@ def fetch_event(event_key: str, config_path: str | Path | None = None,
         ],
         "exclude_dates": list(event.exclude_dates),
         "known_floods_between": _known_floods(event, event_key),
+        "known_floods_after": _known_floods_after(event, event_key),
         "composites": groups,
         "files": {name: str(path.relative_to(PROJECT_ROOT)).replace("\\", "/")
                   for name, path in files.items()},
@@ -539,12 +541,27 @@ def _require_s1_bands(group: dict, assets) -> None:
 
 
 def _known_floods(event, event_key: str) -> list:
-    if not hasattr(event, "known_floods_between"):
-        raise RuntimeError(
-            f"{event_key} has no known_floods_between in config.yaml. "
-            "Add a list (use [] when none are known). None were assumed."
-        )
-    return list(event.known_floods_between)
+    """Floods between the S1 baseline and the event (14.17), as plain records."""
+    from .floods import flood_records
+    return flood_records(event, event_key)["known_floods_between"]
+
+
+def _known_floods_after(event, event_key: str) -> list:
+    """Floods inside the post window, as plain records."""
+    from .floods import flood_records
+    return flood_records(event, event_key)["known_floods_after"]
+
+
+def _print_known_floods(event, event_key: str) -> None:
+    from .floods import flood_records
+    records = flood_records(event, event_key)
+    for title, key in (("Known floods between the S1 baseline and the event",
+                        "known_floods_between"),
+                       ("Known floods inside the post window", "known_floods_after")):
+        recs = records[key]
+        print(f"{title}: {len(recs) if recs else 'none recorded'}")
+        for r in recs:
+            print(f"  {r['start']} to {r['end']}, {r['place']} ({r['type']}): {r['label_effect']}")
 
 
 def _fetch_only(cfg, event, event_key, region, grid, only) -> Path:
@@ -615,6 +632,7 @@ def _fetch_only(cfg, event, event_key, region, grid, only) -> Path:
         _assert_grid(path, crs, cfg.grid_m)
         provenance["s1_geometry"] = geometry
     provenance["known_floods_between"] = _known_floods(event, event_key)
+    provenance["known_floods_after"] = _known_floods_after(event, event_key)
     dest.write_text(json.dumps(provenance, indent=2), encoding="utf-8")
     print(f"Updated {dest.relative_to(PROJECT_ROOT)}")
     return dest

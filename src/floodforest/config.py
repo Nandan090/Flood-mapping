@@ -92,6 +92,7 @@ def derive_placebo_event(event: SimpleNamespace, event_key: str) -> SimpleNamesp
                                shift_years(event.sar_near.end, years))
     out.exclude_dates = []
     out.known_floods_between = []
+    out.known_floods_after = []
     out.flood_check = getattr(block, "flood_check", None)
     out.worldcover_standin = getattr(block, "worldcover_standin", None)
     if hasattr(out, "dynamic_world_gap_check"):

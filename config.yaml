@@ -331,7 +331,13 @@ events:
     s1_pre: { start: "2024-07-09T00:00:00Z", end: "2024-08-15T00:00:00Z" }
     s1_post: { start: "2025-07-09T00:00:00Z", end: "2025-08-15T00:00:00Z" }
     sar_near: { start: "2025-05-01T00:00:00Z", end: "2025-07-08T00:00:00Z" }
-    known_floods_between: []
+    # 14.17: floods between the S1 baseline and the event (supplied by the user).
+    known_floods_between:
+      - { start: "2024-08-25", end: "2024-08-25", place: "Kerung rivulet near Rasuwagadhi", type: flash_flood, note: "local tributary" }
+      - { start: "2024-09-27", end: "2024-09-29", place: "Trishuli basin", type: river_flood, note: "basin-wide; not shown to inundate the whole reach" }
+    # Floods inside the post window (supplied by the user); recorded and reported.
+    known_floods_after:
+      - { start: "2025-07-30", end: "2025-07-30", place: "Timure and Bhotekoshi", type: flash_flood, note: "road erosion and downstream flooding", handling: "manual exclusions (14.19 e)" }
     manual_exclusions: [] # filled from this event's post-event sheets (14.19 e)
     manual_exclusions_confirmed_on: null
     # Independent validation edges (14.13), decided by the user. A point is valid

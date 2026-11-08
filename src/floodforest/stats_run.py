@@ -16,6 +16,7 @@ import pandas as pd
 
 from . import stats as S
 from .config import PROJECT_ROOT, load_config, placebo_key, rebuild_variants, variant_key
+from .floods import flood_records, report_lines
 
 LABEL_DYNAMIC = {"river_not_visible", "near_bank_nodata", "low_valid_fraction", "belt_no_data"}
 NULL_PUSH = "pushes toward null by construction"
@@ -695,6 +696,7 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
         "| Check | Result |", "|---|---|",
         *(f"| {k} | {v} |" for k, v in checks.items()),
         "",
+        *report_lines(flood_records(event, event_key)),
         "## Models",
         "",
         f"Model A (8.2, 14.16, 14.18): `y ~ {primary['rhs_a']}`. OLS for reach height and "

@@ -68,7 +68,14 @@ def test_s1_baseline_is_the_same_season_one_year_earlier():
     assert (l.s1_pre.start, l.s1_pre.end) == (
         "2024-07-09T00:00:00Z", "2024-08-15T00:00:00Z")
     assert l.sar_near.start == "2025-05-01T00:00:00Z"
-    assert l.known_floods_between == []
+    assert [(f.start, f.end, f.place, f.type) for f in l.known_floods_between] == [
+        ("2024-08-25", "2024-08-25", "Kerung rivulet near Rasuwagadhi", "flash_flood"),
+        ("2024-09-27", "2024-09-29", "Trishuli basin", "river_flood")]
+    assert [(f.start, f.end, f.place, f.type, f.handling) for f in l.known_floods_after] == [
+        ("2025-07-30", "2025-07-30", "Timure and Bhotekoshi", "flash_flood",
+         "manual exclusions (14.19 e)")]
+    assert not hasattr(m, "known_floods_after")
+    assert not hasattr(events.bhotekoshi2026, "known_floods_after")
 
     b = events.bhotekoshi2026
     assert (b.s1_pre.start, b.s1_pre.end) == (
