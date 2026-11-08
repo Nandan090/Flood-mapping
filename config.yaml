@@ -314,7 +314,9 @@ events:
     reach_start_km: 0
     reach_end_km: 35 # from the draft paper, until the user replaces it
     rivers: [Bhotekoshi, Trishuli]
-    section_breaks_km: null # user confirms confluences inside the reach
+    # Confirmed by the user (14.16 rule 4): no section break. The only candidate,
+    # Langtang Khola at km 14.2, raises MERIT upstream area by 17%, below the 50% rule.
+    section_breaks_km: []
     # Rasuwagadhi = the verified start (first vertex of the verified centerline).
     # Syaphrubesi confirmed by the user (2026-11-04). Exclusions are read from
     # data/lende2025/exclusions.geojson (7 features, verified by the user).
