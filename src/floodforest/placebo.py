@@ -577,6 +577,25 @@ def _pct(v):
     return "NA" if v is None or not np.isfinite(v) else f"{100 * v:.1f}%"
 
 
+def flood_check_limitations(fc, key: str) -> list[str]:
+    """Report bullets for floods reported inside the confirmed interval and the user's
+    caveats (flood_check.reported_floods, flood_check.limitations). Both are optional."""
+    from .floods import _records
+    lines = []
+    for r in _records(fc, "reported_floods", key, required=False):
+        source = f" (source: {r['source']})" if r.get("source") else ""
+        when = r["start"] if r["start"] == r["end"] else f"{r['start']} to {r['end']}"
+        lines.append(
+            f"- Reported inside the confirmed interval: {r['type'].replace('_', ' ')}, "
+            f"{r['place']}, {when}{source}: {r['note']}. The user's confirmation covers notable "
+            "floods; this report is listed so a reader can judge it.")
+    for text in getattr(fc, "limitations", None) or []:
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError(f"{key} flood_check.limitations has an empty or non-text entry.")
+        lines.append(f"- {text.strip()}")
+    return lines
+
+
 def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, standin_by_tercile,
                  flagged, plac, real, det, det_by_cat, reach_rows, lab, area, km_ranges, written,
                  out_dir, yl) -> str:
@@ -807,6 +826,7 @@ def _report_text(event_key, key, event, cfg, provenance, summary, sens, terc, st
         "",
         "- The placebo shows how much impact the method finds when no notable flood occurred. It does "
         "not prove that no local flood, high flow or bank erosion happened in the period.",
+        *flood_check_limitations(fc, key),
         "- The forest-effect half of the placebo test (beta1, 8.9) is in the `stats` report; "
         "it covers only rows whose river was visible, which leaves out much of the densest forest.",
         "- Diagnostic categories use 10 m imagery and a 30 m DEM; they are review aids, not causes. "

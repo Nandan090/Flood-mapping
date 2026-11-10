@@ -63,12 +63,55 @@ def test_fake_date_must_share_month_and_day():
 
 # --- the confirmed flood-free period ---------------------------------------
 
-def test_flood_check_must_be_confirmed_and_cover_the_windows():
+@pytest.fixture
+def unconfirmed_config(tmp_path):
+    """A copy of config.yaml with the lende2025 placebo flood_check removed, so the
+    refusal paths can be tested without the real (confirmed) config downloading anything."""
+    import yaml
+    from floodforest.config import PROJECT_ROOT
+    raw = yaml.safe_load((PROJECT_ROOT / "config.yaml").read_text(encoding="utf-8"))
+    del raw["events"]["lende2025"]["placebo"]["flood_check"]
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_lende_flood_check_is_confirmed_over_the_placebo_interval():
+    from floodforest.ee_data import require_confirmed_flood_check
+    from floodforest.placebo import flood_check_limitations
+    p = load_config().events.lende2025_placebo
+    require_confirmed_flood_check(p, "lende2025_placebo")
+    fc = p.flood_check
+    assert (fc.interval.start, fc.interval.end) == ("2022-07-09", "2023-12-15")
+    assert fc.placebo_pair_review.date == "2026-11-10"
+    lines = flood_check_limitations(fc, "lende2025_placebo")
+    assert lines[0].startswith("- Reported inside the confirmed interval: sudden rise, "
+                               "Bhote Koshi, originating in Tibet, 2023-07-12 to 2023-07-13 "
+                               "(source: Radio Nepal, 2023-07-13): police warnings issued; "
+                               "damaging flood not confirmed.")
+    assert len(lines) == 1 + 5
+    assert any("could not be seen in radar" in line for line in lines)
+    assert any("Wayback imagery cannot separate" in line for line in lines)
+    # Melamchi records neither field, so its report gains no lines.
+    assert flood_check_limitations(load_config().events.melamchi2021_placebo.flood_check, "m") == []
+
+
+def test_flood_check_limitations_refuse_bad_entries():
+    from floodforest.placebo import flood_check_limitations
+    with pytest.raises(RuntimeError, match="missing"):
+        flood_check_limitations(SimpleNamespace(reported_floods=[
+            SimpleNamespace(start="2023-07-12", end="2023-07-13")]), "k")
+    with pytest.raises(RuntimeError, match="empty or non-text"):
+        flood_check_limitations(SimpleNamespace(limitations=[" "]), "k")
+
+
+def test_flood_check_must_be_confirmed_and_cover_the_windows(unconfirmed_config):
     from floodforest.ee_data import require_confirmed_flood_check
     cfg = load_config()
     require_confirmed_flood_check(cfg.events.melamchi2021_placebo, "m")
     with pytest.raises(RuntimeError, match="no confirmed flood_check"):
-        require_confirmed_flood_check(cfg.events.lende2025_placebo, "l")
+        require_confirmed_flood_check(
+            load_config(unconfirmed_config).events.lende2025_placebo, "l")
     short = copy.deepcopy(cfg.events.melamchi2021_placebo)
     short.flood_check.interval.end = "2019-10-31"
     with pytest.raises(RuntimeError, match="does not cover"):
@@ -79,10 +122,10 @@ def test_flood_check_must_be_confirmed_and_cover_the_windows():
         require_confirmed_flood_check(pending, "m")
 
 
-def test_placebo_step_refuses_without_confirmation_before_any_download():
+def test_placebo_step_refuses_without_confirmation_before_any_download(unconfirmed_config):
     from floodforest.placebo import run_placebo
     with pytest.raises(RuntimeError, match="no confirmed flood_check"):
-        run_placebo("lende2025")
+        run_placebo("lende2025", config_path=unconfirmed_config)
 
 
 def test_placebo_key_must_be_the_real_event():
@@ -92,13 +135,13 @@ def test_placebo_key_must_be_the_real_event():
         resolve_placebo(cfg, "melamchi2021_placebo")
 
 
-def test_fetch_refuses_placebos_of_events_it_cannot_fetch():
+def test_fetch_refuses_placebos_of_events_it_cannot_fetch(unconfirmed_config):
     from floodforest.ee_data import fetch_event
     with pytest.raises(RuntimeError, match="not listed"):
         fetch_event("bhotekoshi2026_placebo")
     # lende2025 is listed, but its placebo still needs a confirmed flood check first.
     with pytest.raises(RuntimeError, match="no confirmed flood_check"):
-        fetch_event("lende2025_placebo")
+        fetch_event("lende2025_placebo", config_path=unconfirmed_config)
 
 
 def test_fetch_events_come_from_config():
@@ -135,8 +178,10 @@ def test_exposure_accepts_a_recorded_event_standin():
             "year": 2021, "standin_for_year": 2024}})
 
 
-def test_cli_wires_the_placebo_step():
+def test_cli_wires_the_placebo_step(unconfirmed_config, monkeypatch):
+    from floodforest import placebo
     from floodforest.cli import main
+    monkeypatch.setattr(placebo, "load_config", lambda path=None: load_config(unconfirmed_config))
     with pytest.raises(RuntimeError, match="no confirmed flood_check"):
         main(["placebo", "--event", "lende2025"])
     with pytest.raises(SystemExit, match="--refetch applies to placebo"):
