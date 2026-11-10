@@ -79,6 +79,7 @@ ndvi_unknown_max: 0.30 # already bare/built before the event -> nodata
 ndvi_deposit_max: 0.30
 bsi_percentile: 5 # t_bsi = this percentile of BSI_post in the channel
 sar_scenes_min: 3 # orbits with fewer scenes are skipped
+s1_corridor_coverage_min: 0.95 # fetch keeps a Sentinel-1 scene only if its footprint covers this share of the corridor (user decision 2026-11-10)
 sar_focal_median_px: 3 # 3x3 focal median on each scene, in dB
 layover_shadow_buffer_m: 30 # extra buffer around layover/shadow (14.19 d)
 dark_b8_threshold: 0.08 # B8 below this in the pre or post composite: optical nodata outside the channel (14.19 a)

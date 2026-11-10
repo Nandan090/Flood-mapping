@@ -52,7 +52,7 @@ def fetch_event(event_key: str, config_path: str | Path | None = None,
 
     corridor, region, grid = _corridor(event, cfg)
     if only:
-        return _fetch_only(cfg, event, event_key, region, grid, only)
+        return _fetch_only(cfg, event, event_key, region, grid, only, corridor)
     print(
         f"Corridor grid: {grid['width']} x {grid['height']} pixels "
         f"at {cfg.grid_m} m in {cfg.crs}."
@@ -77,7 +77,7 @@ def fetch_event(event_key: str, config_path: str | Path | None = None,
     out_dir = PROJECT_ROOT / cfg.paths.data / event_key / "rasters"
     out_dir.mkdir(parents=True, exist_ok=True)
     files = _download_all(
-        cfg, region, grid, groups, hansen, worldcover, out_dir)
+        cfg, region, grid, groups, hansen, worldcover, out_dir, corridor)
 
     provenance = {
         "event": event_key,
@@ -420,13 +420,13 @@ def _scene_groups(cfg, event, region) -> dict:
         ee.ImageCollection(assets.dynamic_world), event.s2_pre, region, event,
         role="exposure", extra=["MGRS_TILE"])
     s1 = _s1_collection(cfg)
-    groups["s1_pre"] = _drop_short_orbits(_collect(
+    groups["s1_pre"] = _drop_short_orbits(_s1_coverage_filter(cfg, _collect(
         s1, event.s1_pre, region, event, role="exposure",
-        extra=["relativeOrbitNumber_start", "orbitProperties_pass"]),
+        extra=["relativeOrbitNumber_start", "orbitProperties_pass"]), region, "s1_pre"),
         cfg.sar_scenes_min, "s1_pre")
-    groups["s1_post"] = _collect(
+    groups["s1_post"] = _s1_coverage_filter(cfg, _collect(
         s1, event.s1_post, region, event, role="outcome",
-        extra=["relativeOrbitNumber_start", "orbitProperties_pass"])
+        extra=["relativeOrbitNumber_start", "orbitProperties_pass"]), region, "s1_post")
     _require_s1_bands(groups["s1_pre"], assets)
     _require_s1_bands(groups["s1_post"], assets)
     return groups
@@ -564,7 +564,7 @@ def _print_known_floods(event, event_key: str) -> None:
             print(f"  {r['start']} to {r['end']}, {r['place']} ({r['type']}): {r['label_effect']}")
 
 
-def _fetch_only(cfg, event, event_key, region, grid, only) -> Path:
+def _fetch_only(cfg, event, event_key, region, grid, only, corridor) -> Path:
     """Refresh the named products and leave the other rasters as they are."""
     allowed = {"s1_pre", "copernicus_dem", "s1_near", "s1_geometry"}
     unknown = [name for name in only if name not in allowed]
@@ -595,29 +595,29 @@ def _fetch_only(cfg, event, event_key, region, grid, only) -> Path:
         print(f"Copernicus DEM: {cfg.assets.copernicus_dem} opened"
               + (f". {notice}" if notice else "."))
     if "s1_pre" in only:
-        group = _drop_short_orbits(
-            _collect(_s1_collection(cfg), event.s1_pre, region, event,
-                     role="exposure",
-                     extra=["relativeOrbitNumber_start", "orbitProperties_pass"]),
-            cfg.sar_scenes_min, "s1_pre")
+        group = _drop_short_orbits(_s1_coverage_filter(
+            cfg, _collect(_s1_collection(cfg), event.s1_pre, region, event,
+                          role="exposure",
+                          extra=["relativeOrbitNumber_start", "orbitProperties_pass"]),
+            region, "s1_pre"), cfg.sar_scenes_min, "s1_pre")
         _require_s1_bands(group, cfg.assets)
-        path = _save(
-            _s1_stack(group, cfg.assets.s1_polarisations, proj, region),
-            out_dir / "s1_pre.tif", grid, crs, "float32")
+        path = out_dir / "s1_pre.tif"
+        group = _save_s1(cfg, group, "s1_pre", path, grid, proj, region,
+                         _corridor_mask(corridor, grid))
         _assert_grid(path, crs, cfg.grid_m)
         provenance.setdefault("composites", {})["s1_pre"] = group
     if "s1_near" in only:
         if not hasattr(event, "sar_near"):
             raise RuntimeError(f"{event_key} has no sar_near window in config.yaml.")
-        group = _drop_short_orbits(
-            _collect(_s1_collection(cfg), event.sar_near, region, event,
-                     role="exposure",
-                     extra=["relativeOrbitNumber_start", "orbitProperties_pass"]),
-            cfg.sar_scenes_min, "s1_near")
+        group = _drop_short_orbits(_s1_coverage_filter(
+            cfg, _collect(_s1_collection(cfg), event.sar_near, region, event,
+                          role="exposure",
+                          extra=["relativeOrbitNumber_start", "orbitProperties_pass"]),
+            region, "s1_near"), cfg.sar_scenes_min, "s1_near")
         _require_s1_bands(group, cfg.assets)
-        path = _save(
-            _s1_stack(group, cfg.assets.s1_polarisations, proj, region),
-            out_dir / "s1_near.tif", grid, crs, "float32")
+        path = out_dir / "s1_near.tif"
+        group = _save_s1(cfg, group, "s1_near", path, grid, proj, region,
+                         _corridor_mask(corridor, grid))
         _assert_grid(path, crs, cfg.grid_m)
         group["label"] = "sar_near: sensitivity baseline, never the primary"
         provenance.setdefault("composites", {})["s1_near"] = group
@@ -709,6 +709,168 @@ def _drop_short_orbits(group: dict, minimum: int, label: str) -> dict:
     return updated
 
 
+def _s1_coverage_shares(scene_ids: list[str], region) -> list[float]:
+    """Share of the corridor polygon inside each scene's footprint (Earth Engine)."""
+    if not scene_ids:
+        return []
+    margin = ee.ErrorMargin(1)
+    total = region.area(margin)
+    shares = ee.List([
+        ee.Image(sid).geometry().intersection(region, margin).area(margin).divide(total)
+        for sid in scene_ids]).getInfo()
+    return [float(share) for share in shares]
+
+
+def apply_s1_coverage(group: dict, shares: list[float], threshold: float,
+                      minimum: int, label: str) -> dict:
+    """Keep Sentinel-1 scenes that cover at least `threshold` of the corridor.
+
+    Every scene gets its coverage share; dropped scenes are listed with the reason.
+    An orbit none of whose scenes covers the corridor is left out and logged. An
+    orbit that had at least `minimum` scenes and falls below it because of this
+    rule stops the run: nothing is filled in and no rule is relaxed.
+    """
+    scenes = group["scenes"]
+    if len(shares) != len(scenes):
+        raise RuntimeError(f"{label}: {len(shares)} coverage shares for {len(scenes)} scenes.")
+    kept, dropped = [], list(group.get("dropped_scenes", []))
+    by_orbit: dict[tuple, list[int]] = {}
+    for scene, share in zip(scenes, shares):
+        scene = {**scene, "corridor_coverage_share": round(share, 4)}
+        key = (scene.get("relativeOrbitNumber_start"), scene.get("orbitProperties_pass"))
+        by_orbit.setdefault(key, [0, 0])[0] += 1
+        if share >= threshold:
+            kept.append(scene)
+            by_orbit[key][1] += 1
+        else:
+            dropped.append(_dropped(scene, f"footprint covers {share:.1%} of the corridor, "
+                                           f"below the {threshold:.0%} minimum"))
+    _check_orbits_after_drop(by_orbit, minimum, label, "corridor coverage")
+    return _with_scenes(group, kept, dropped, label)
+
+
+def _dropped(scene: dict, reason: str) -> dict:
+    return {"scene_id": scene["scene_id"], "time_utc": scene["time_utc"],
+            "relativeOrbitNumber_start": scene.get("relativeOrbitNumber_start"),
+            "orbitProperties_pass": scene.get("orbitProperties_pass"),
+            "corridor_coverage_share": scene.get("corridor_coverage_share"),
+            "reason": reason}
+
+
+def _check_orbits_after_drop(by_orbit: dict, minimum: int, label: str, rule: str) -> None:
+    short = [f"orbit {o} {d}: {after} of {before} scenes kept"
+             for (o, d), (before, after) in sorted(by_orbit.items(), key=lambda kv: str(kv[0]))
+             if 0 < after < minimum <= before]
+    if short:
+        raise RuntimeError(
+            f"{label}: dropping scenes by {rule} leaves "
+            + "; ".join(short)
+            + f", below the {minimum} scenes an orbit needs (5.3). Nothing was downloaded "
+            "for this group, no scene was filled in and no rule was relaxed.")
+    for (o, d), (before, after) in sorted(by_orbit.items(), key=lambda kv: str(kv[0])):
+        if after == 0:
+            print(f"  {label}: orbit {o} {d} left out, none of its {before} scenes "
+                  f"passed the {rule} check")
+
+
+def _with_scenes(group: dict, kept: list, dropped: list, label: str) -> dict:
+    if not kept:
+        raise RuntimeError(f"{label}: no Sentinel-1 scene is left after the corridor "
+                           "checks. Nothing was filled in.")
+    kept = sorted(kept, key=lambda scene: scene["time_utc"])
+    updated = dict(group)
+    updated["scenes"] = kept
+    updated["dropped_scenes"] = dropped
+    updated["date_range_used"] = {"start": kept[0]["time_utc"], "end": kept[-1]["time_utc"]}
+    return updated
+
+
+def _s1_coverage_filter(cfg, group: dict, region, label: str) -> dict:
+    shares = _s1_coverage_shares([s["scene_id"] for s in group["scenes"]], region)
+    out = apply_s1_coverage(group, shares, cfg.s1_corridor_coverage_min,
+                            cfg.sar_scenes_min, label)
+    for row in out["dropped_scenes"]:
+        print(f"  {label} dropped: {row['time_utc']} orbit {row['relativeOrbitNumber_start']} "
+              f"{row['orbitProperties_pass']} {row['scene_id']} ({row['reason']})")
+    return out
+
+
+def s1_band_check(path: Path, group: dict, polarisations, corridor) -> tuple[list, list]:
+    """Per scene in a downloaded stack: shares of the corridor that are nodata or
+    exactly 0 dB. Returns (bad scene indices, per-scene stats). A scene is bad when
+    any of its bands has no valid non-zero pixel inside the corridor."""
+    import numpy as np
+    bad, stats = [], []
+    with rasterio.open(path) as src:
+        names = list(src.descriptions)
+        inside = np.asarray(corridor, dtype=bool)
+        n = int(inside.sum())
+        for index, _scene in enumerate(group["scenes"]):
+            worst_nodata = worst_zero = 0.0
+            empty = False
+            for pol in polarisations:
+                name = f"{pol}_{index}"
+                if name not in names:
+                    raise RuntimeError(f"{path.name} has no band {name}. Bands: {names}.")
+                band = src.read(names.index(name) + 1, masked=True)
+                masked = np.ma.getmaskarray(band)[inside]
+                data = np.ma.getdata(band)[inside]
+                nodata = masked | ~np.isfinite(data)
+                zero = ~nodata & (data == 0)
+                worst_nodata = max(worst_nodata, float(nodata.sum()) / n)
+                worst_zero = max(worst_zero, float(zero.sum()) / n)
+                if not (~nodata & ~zero).any():
+                    empty = True
+                del band, masked, data
+            stats.append({"corridor_nodata_share": round(worst_nodata, 4),
+                          "corridor_zero_share": round(worst_zero, 4)})
+            if empty:
+                bad.append(index)
+    return bad, stats
+
+
+def _save_s1(cfg, group: dict, label: str, path: Path, grid: dict, proj, region,
+             corridor_mask) -> dict:
+    """Download a Sentinel-1 stack and refuse to keep zero-filled scenes.
+
+    A scene whose downloaded bands are all zero or nodata over the corridor is
+    dropped and recorded, the file is deleted and the stack downloaded again
+    without it. The orbit rule of apply_s1_coverage applies to these drops too.
+    """
+    pols = cfg.assets.s1_polarisations
+    for _attempt in range(3):
+        _save(_s1_stack(group, pols, proj, region), path, grid, cfg.crs, "float32")
+        bad, stats = s1_band_check(path, group, pols, corridor_mask)
+        if not bad:
+            group = dict(group)
+            group["scenes"] = [{**s, **st} for s, st in zip(group["scenes"], stats)]
+            return group
+        path.unlink()
+        by_orbit: dict[tuple, list[int]] = {}
+        kept, dropped = [], list(group.get("dropped_scenes", []))
+        for index, scene in enumerate(group["scenes"]):
+            key = (scene.get("relativeOrbitNumber_start"), scene.get("orbitProperties_pass"))
+            by_orbit.setdefault(key, [0, 0])[0] += 1
+            if index in bad:
+                dropped.append(_dropped(scene, "downloaded bands are all zero or nodata "
+                                               "over the corridor"))
+                print(f"  {label} dropped after download: {scene['time_utc']} {scene['scene_id']}")
+            else:
+                kept.append(scene)
+                by_orbit[key][1] += 1
+        _check_orbits_after_drop(by_orbit, cfg.sar_scenes_min, label, "the downloaded-band check")
+        group = _with_scenes(group, kept, dropped, label)
+    raise RuntimeError(f"{label}: zero-filled scenes remained after 3 downloads. "
+                       f"{path.name} was not kept.")
+
+
+def _corridor_mask(polygon, grid: dict):
+    from rasterio.features import rasterize
+    return rasterize([(polygon, 1)], out_shape=(grid["height"], grid["width"]),
+                     transform=rasterio.Affine(*grid["transform"]), fill=0,
+                     dtype="uint8").astype(bool)
+
+
 def _print_scenes(groups: dict) -> None:
     print("Scenes used:")
     for name, group in groups.items():
@@ -730,7 +892,7 @@ def _print_scenes(groups: dict) -> None:
                 print(f"    {scene['time_utc']}  {scene['scene_id']}{extra}")
 
 
-def _download_all(cfg, region, grid, groups, hansen, worldcover, out_dir):
+def _download_all(cfg, region, grid, groups, hansen, worldcover, out_dir, corridor):
     files = {}
     bands = cfg.assets.bands
     crs = cfg.crs
@@ -764,12 +926,11 @@ def _download_all(cfg, region, grid, groups, hansen, worldcover, out_dir):
         _on_grid(ee.Image(cfg.assets.merit).select(bands.merit).rename("upa"),
                  proj, "bilinear", region),
         out_dir / "merit_upa.tif", grid, crs, "float32")
-    files["s1_pre"] = _save(
-        _s1_stack(groups["s1_pre"], cfg.assets.s1_polarisations, proj, region),
-        out_dir / "s1_pre.tif", grid, crs, "float32")
-    files["s1_post"] = _save(
-        _s1_stack(groups["s1_post"], cfg.assets.s1_polarisations, proj, region),
-        out_dir / "s1_post.tif", grid, crs, "float32")
+    mask = _corridor_mask(corridor, grid)
+    for name in ("s1_pre", "s1_post"):
+        files[name] = out_dir / f"{name}.tif"
+        groups[name] = _save_s1(cfg, groups[name], name, files[name], grid, proj, region, mask)
+    del mask
     for path in files.values():
         _assert_grid(path, cfg.crs, cfg.grid_m)
     _assert_images_have_spatial_detail(files)
