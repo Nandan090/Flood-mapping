@@ -216,3 +216,21 @@ def test_centring_falls_back_to_one_pixel_when_no_channel_is_close():
     assert r["channel_width_m"] == 10
     assert np.isnan(r["centre_offset_m"])
     assert r["z0"] == 1000.0
+
+
+def test_temporal_median_in_row_blocks_equals_one_pass():
+    # Large corridors are processed in row blocks to fit in memory; the result
+    # must be exactly the one-pass nanmedian with the min_scenes rule.
+    rng = np.random.default_rng(3)
+    scenes = [np.where(rng.random((517, 23)) < 0.25, np.nan, rng.normal(size=(517, 23)))
+              for _ in range(5)]
+    stack = np.stack(scenes)
+    with np.errstate(all="ignore"):
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            expected = np.nanmedian(stack, axis=0)
+    expected[np.isfinite(stack).sum(axis=0) < 3] = np.nan
+    for block in (1, 64, 256, 1000):
+        got = sar.temporal_median(scenes, 3, block_rows=block)
+        assert np.array_equal(got, expected, equal_nan=True)

@@ -76,14 +76,23 @@ def focal_median(image: np.ndarray, size: int) -> np.ndarray:
     return filtered
 
 
-def temporal_median(scenes: list[np.ndarray], min_scenes: int) -> np.ndarray:
-    """Per-pixel median over scenes; fewer than min_scenes valid values is nodata."""
-    stack = np.stack(scenes)
-    count = np.isfinite(stack).sum(axis=0)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        out = np.nanmedian(stack, axis=0)
-    out[count < min_scenes] = np.nan
+def temporal_median(scenes: list[np.ndarray], min_scenes: int,
+                    block_rows: int = 256) -> np.ndarray:
+    """Per-pixel median over scenes; fewer than min_scenes valid values is nodata.
+
+    Worked out in blocks of rows so a large corridor fits in memory. Each pixel's
+    median depends only on that pixel, so the result is the same as in one pass.
+    """
+    rows = scenes[0].shape[0]
+    out = np.empty(scenes[0].shape, dtype=np.result_type(*scenes))
+    for r0 in range(0, rows, block_rows):
+        stack = np.stack([s[r0:r0 + block_rows] for s in scenes])
+        count = np.isfinite(stack).sum(axis=0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            part = np.nanmedian(stack, axis=0)
+        part[count < min_scenes] = np.nan
+        out[r0:r0 + block_rows] = part
     return out
 
 

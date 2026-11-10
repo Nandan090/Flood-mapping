@@ -73,6 +73,12 @@ def run_label(event_key: str, config_path: str | Path | None = None) -> list[Pat
         ndvi_pre, ndvi_post, bsi_post, channel, t_bsi,
         cfg.ndvi_unknown_max, cfg.ndvi_deposit_max, dark=dark)
     optical_raw[~corridor] = np.nan
+    # Free full-corridor arrays nothing below uses, so large corridors fit in
+    # memory. Values are unchanged; the sheets need only the true-colour bands.
+    del ndvi_pre, mndwi_pre, spectral, near_line, ndvi_post, bsi_post
+    for bands in (pre, post):
+        for name in [b for b in bands if b not in sheets.TRUE_COLOUR]:
+            del bands[name]
     exclusions = manual_exclusions(event, event_key, cfg)
 
     # Stations, z0 and the pixel -> nearest-station lookup (14.11, 14.18).
@@ -91,6 +97,7 @@ def run_label(event_key: str, config_path: str | Path | None = None) -> list[Pat
     # Radar (5.3, 14.11, 14.12, 14.17).
     orbit_geometry = _orbit_geometry(provenance, rasters / "s1_angle.tif",
                                      slope, aspect, corridor, grid, cfg)
+    del aspect
     post_medians = _orbit_medians(rasters / "s1_post.tif", provenance, "s1_post", cfg, grid)
     pre_medians = _orbit_medians(rasters / "s1_pre.tif", provenance, "s1_pre", cfg, grid)
     near_medians = _orbit_medians(rasters / "s1_near.tif", provenance, "s1_near", cfg, grid)
@@ -453,7 +460,11 @@ def _orbit_medians(path, provenance, group_name, cfg, grid) -> dict:
         raise RuntimeError(f"provenance.json has no {group_name} scenes. Run fetch first.")
     scenes = group["scenes"]
     names = [f"{pol}_{i}" for i in range(len(scenes)) for pol in cfg.assets.s1_polarisations]
-    bands, _ = _read_named(path, names, cfg.crs, grid)
+    with rasterio.open(path) as src:
+        found = list(src.descriptions)
+    missing = [n for n in names if n not in found]
+    if missing:
+        raise RuntimeError(f"{path.name} is missing {missing}. Bands: {found}.")
     with rasterio.open(path) as src:
         extra = [d for d in src.descriptions
                  if d.split("_")[0] in cfg.assets.s1_polarisations and d not in names]
@@ -471,9 +482,15 @@ def _orbit_medians(path, provenance, group_name, cfg, grid) -> dict:
             continue
         medians = {}
         for pol in cfg.assets.s1_polarisations:
-            filtered = [sar.focal_median(bands[f"{pol}_{i}"], cfg.sar_focal_median_px)
-                        for i in indices]
+            # One band at a time, so only this orbit's filtered scenes are in memory.
+            filtered = []
+            for i in indices:
+                name = f"{pol}_{i}"
+                band = _read_named(path, [name], cfg.crs, grid)[0][name]
+                filtered.append(sar.focal_median(band, cfg.sar_focal_median_px))
+                del band
             medians[pol] = sar.temporal_median(filtered, cfg.sar_scenes_min)
+            del filtered
         out[key] = {"medians": medians, "scenes": len(indices)}
     return out
 
