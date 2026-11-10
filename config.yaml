@@ -360,6 +360,27 @@ events:
       s1_post: { start: "2023-07-09T00:00:00Z", end: "2023-08-15T00:00:00Z" }
       # WorldCover has no 2022 map (user decision 2026-11-03): 2021 stands in, flagged.
       worldcover_standin: { year: 2021, for_year: 2022, decided_on: "2026-11-03" }
+      # Record only (14.2): the user's check that no notable flood hit the
+      # corridor in the placebo interval. Changes no label or placebo setting.
+      # reported_floods and limitations are listed in the placebo report.
+      flood_check:
+        interval: { start: "2022-07-09", end: "2023-12-15" } # S1 pre start to S2 post end
+        status: confirmed # by the user, 2026-11-10: no notable flood in the interval
+        placebo_pair_review: { compared: "Oct-Dec 2022 vs Oct-Dec 2023 (Sentinel-2); Jul 9-Aug 15 2022 vs 2023 (Sentinel-1)",
+                               area: "river km 0-35 (overview sheets and 1 km chips)",
+                               reviewed_by: user, date: "2026-11-10",
+                               verdict: "no river-aligned belt of flood-type change" }
+        reported_floods:
+          - { start: "2023-07-12", end: "2023-07-13", place: "Bhote Koshi, originating in Tibet",
+              type: sudden_rise, source: "Radio Nepal, 2023-07-13",
+              note: "police warnings issued; damaging flood not confirmed" }
+        limitations:
+          - "No corridor-specific flood record was found for Oct-Dec 2022 or the rest of 2023."
+          - "No Sentinel-1 scene exists for 2023-07-12 to 2023-07-15 in this corridor, so a short surge could not be seen in radar."
+          - "Small isolated optical changes near the river (km 2.2-2.6, 3.3-3.8, 4.2-4.5, 7.3-7.8, 14.2-14.6, 23.6-23.9, 24.3-24.5, 26.9-27.0, 28.3, 29.8-30.0, 30.0, 33.6-33.8, 34.3-34.5) are consistent with bar, bank, slope or construction change and are not matched in radar."
+          - "In the gorge (km 21-25) the 2023 channel is darker and less bare than 2022 (less bare-soil index), the opposite of flood scour."
+          - "Wayback imagery cannot separate 2023 change from 2018-2024."
+        record: results/placebo_check_lende/
 
   bhotekoshi2026:
     name: Ice-rock avalanche debris flood
