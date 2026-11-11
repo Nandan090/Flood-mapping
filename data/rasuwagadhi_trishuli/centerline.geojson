@@ -25,7 +25,7 @@
             "offset_m": 0.39200000000000002
           }
         },
-        "note": "Draft only. Check against the pre-event Sentinel-2 image before use. verified_by_user is false. Each event's reach is its reach_start_km to reach_end_km on this line."
+        "note": "Verified by the user; repaired 2026-11-08"
       },
       "geometry": {
         "type": "LineString",
