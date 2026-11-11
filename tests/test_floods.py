@@ -25,7 +25,7 @@ def test_lende_floods_and_their_label_effects():
     text = "\n".join(report_lines(rec))
     assert "affect only the radar label" in text
     assert "The 2025-07-30 flood at Timure and Bhotekoshi falls inside the post window" in text
-    assert "Handling: manual exclusions (14.19 e)." in text
+    assert "Handling: none; see limitations." in text
 
 
 def test_events_without_floods_add_nothing_to_the_report():

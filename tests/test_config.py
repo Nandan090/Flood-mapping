@@ -73,7 +73,7 @@ def test_s1_baseline_is_the_same_season_one_year_earlier():
         ("2024-09-27", "2024-09-29", "Trishuli basin", "river_flood")]
     assert [(f.start, f.end, f.place, f.type, f.handling) for f in l.known_floods_after] == [
         ("2025-07-30", "2025-07-30", "Timure and Bhotekoshi", "flash_flood",
-         "manual exclusions (14.19 e)")]
+         "none; see limitations")]
     assert not hasattr(m, "known_floods_after")
     assert not hasattr(events.bhotekoshi2026, "known_floods_after")
 

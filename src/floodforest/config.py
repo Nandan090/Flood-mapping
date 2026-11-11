@@ -93,6 +93,7 @@ def derive_placebo_event(event: SimpleNamespace, event_key: str) -> SimpleNamesp
     out.exclude_dates = []
     out.known_floods_between = []
     out.known_floods_after = []
+    out.limitations = []  # the real event's caveats are not the placebo's
     out.flood_check = getattr(block, "flood_check", None)
     out.worldcover_standin = getattr(block, "worldcover_standin", None)
     if hasattr(out, "dynamic_world_gap_check"):

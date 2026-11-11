@@ -667,6 +667,20 @@ def _worldcover_standin_note(event, cfg, T, base) -> str | None:
             "'forest_source dynamic_world only' run leaves them out.")
 
 
+def event_limitations(event, event_key: str) -> list[str]:
+    """A Limitations section from the event's optional `limitations` list in config.
+
+    Empty when the event has none, so reports of events without the list are unchanged.
+    """
+    items = getattr(event, "limitations", None) or []
+    lines = []
+    for text in items:
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError(f"{event_key} limitations has an empty or non-text entry.")
+        lines.append(f"- {text.strip()}")
+    return ["", "## Limitations", "", *lines] if lines else []
+
+
 def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, placebo_drop,
             checks, verdict, reasons, flips, standin_note=None) -> str:
     A, B = primary["A"], primary["B"]
@@ -856,6 +870,7 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
                       "",
                       "The 14.20 assumed-zero variant adds those rows with reach 0; it "
                       f"{NULL_PUSH}, so it is not evidence that the placebo is null."]
+    lines += event_limitations(event, event_key)
     lines += ["", "## Files", "", "- `stats_results.csv`, `stats_summary.json`, `stats_sign_flips.csv`",
               "- `fig_propensity.png`, `fig_model_b_forest_difference.png`, "
               "`fig_forest_plot_A_height.png`, `fig_forest_plot_B_height.png`", ""]
