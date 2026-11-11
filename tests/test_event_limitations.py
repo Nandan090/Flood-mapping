@@ -33,10 +33,12 @@ def test_lende_limitations_stay_with_the_real_event():
     events = load_config().events
     lines = event_limitations(events.lende2025, "lende2025")
     assert lines[:3] == ["", "## Limitations", ""]
-    assert len(lines) == 3 + 3
+    assert len(lines) == 3 + 4
     assert "30 July 2025 Timure/Bhote Koshi flash flood" in lines[3]
     assert "km 15.0" in lines[4]
     assert "coded reservoir_or_dam in the outcome table" in lines[5]
+    assert "km 35, is the draft-paper value" in lines[6]
+    assert events.lende2025.centerline_traced_on.startswith("OpenStreetMap waterway (osmnx)")
     # The placebo is a different period; it does not inherit the real event's caveats.
     assert event_limitations(events.lende2025_placebo, "lende2025_placebo") == []
 

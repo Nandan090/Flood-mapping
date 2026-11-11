@@ -379,4 +379,5 @@ def test_placebo_report_years_come_from_each_events_windows():
         2022, 2023, 2024, 2025)
     assert (lende["plac_pre_season"], lende["plac_post_season"], lende["standin_year"]) == (
         "Oct-Dec 2022", "Oct-Dec 2023", 2021)
-    assert lende["centerline_traced_on"] is None and lende["validation_section"] == "14.13"
+    assert lende["centerline_traced_on"].startswith("OpenStreetMap waterway (osmnx)")
+    assert lende["validation_section"] == "14.13"

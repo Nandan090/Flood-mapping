@@ -357,6 +357,9 @@ events:
       - "The 30 July 2025 Timure/Bhote Koshi flash flood falls inside the post window and affects km 0-5; imagery cannot separate it from the GLOF; no exclusion was made for it."
       - "The block at km 15.0 was kept as ambiguous (possible village-edge or road ground)."
       - "Exclusion areas a, b, c, e_NW, h (settlement/construction) were identified by sheet review; b and h also checked in Google Earth; the others were not. Rows inside these polygons are coded reservoir_or_dam in the outcome table although they are settlement/construction areas, and, like the dam and bridge polygons, they are not added back in the exclusions-included sensitivity run."
+      - "The reach end, km 35, is the draft-paper value (14.5), not a documented end point; it was kept by the user."
+    # Report text only (placebo report limitations).
+    centerline_traced_on: "OpenStreetMap waterway (osmnx), checked by the user in QGIS against Esri World Imagery Wayback"
     # Independent validation edges (14.13), decided by the user. A point is valid
     # only if its imagery capture date (not release date) is in the window. The
     # window must end before 2026-08-26, when the bhotekoshi2026 flood hit this
