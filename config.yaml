@@ -340,9 +340,23 @@ events:
       - { start: "2024-09-27", end: "2024-09-29", place: "Trishuli basin", type: river_flood, note: "basin-wide; not shown to inundate the whole reach" }
     # Floods inside the post window (supplied by the user); recorded and reported.
     known_floods_after:
-      - { start: "2025-07-30", end: "2025-07-30", place: "Timure and Bhotekoshi", type: flash_flood, note: "road erosion and downstream flooding", handling: "manual exclusions (14.19 e)" }
-    manual_exclusions: [] # filled from this event's post-event sheets (14.19 e)
-    manual_exclusions_confirmed_on: null
+      - { start: "2025-07-30", end: "2025-07-30", place: "Timure and Bhotekoshi", type: flash_flood, note: "road erosion and downstream flooding", handling: "none; see limitations" }
+    # 14.19 e, decided by the user 2026-11-11 from the post-event label sheets, before
+    # any outcome table existed. Sides are looking downstream. note is not read by the code.
+    # Man-made areas (a, b, c, e_NW, h) are polygons in data/lende2025/exclusions.geojson.
+    manual_exclusions:
+      - { from_km: 20.17, to_km: 20.40, side: left, reason: tributary_fan,
+          note: "area d, two-lobed block near a tributary fan (tributary fan or landslide); contact-sheet review, not checked in Google Earth" }
+      - { from_km: 24.51, to_km: 24.72, side: right, reason: hillslope_failure,
+          note: "area f, patch at a side valley (probable slope failure); contact-sheet review, not checked in Google Earth" }
+      - { from_km: 30.81, to_km: 31.26, side: right, reason: tributary_fan,
+          note: "area g, block above the gravel (slope or fan); contact-sheet review, not checked in Google Earth" }
+    manual_exclusions_confirmed_on: "2026-11-11"
+    # Optional; printed as a Limitations section of this event's stats report.
+    limitations:
+      - "The 30 July 2025 Timure/Bhote Koshi flash flood falls inside the post window and affects km 0-5; imagery cannot separate it from the GLOF; no exclusion was made for it."
+      - "The block at km 15.0 was kept as ambiguous (possible village-edge or road ground)."
+      - "Exclusion areas a, b, c, e_NW, h (settlement/construction) were identified by sheet review; b and h also checked in Google Earth; the others were not. Rows inside these polygons are coded reservoir_or_dam in the outcome table although they are settlement/construction areas, and, like the dam and bridge polygons, they are not added back in the exclusions-included sensitivity run."
     # Independent validation edges (14.13), decided by the user. A point is valid
     # only if its imagery capture date (not release date) is in the window. The
     # window must end before 2026-08-26, when the bhotekoshi2026 flood hit this
