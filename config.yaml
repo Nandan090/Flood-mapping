@@ -358,6 +358,7 @@ events:
       - "The block at km 15.0 was kept as ambiguous (possible village-edge or road ground)."
       - "Exclusion areas a, b, c, e_NW, h (settlement/construction) were identified by sheet review; b and h also checked in Google Earth; the others were not. Rows inside these polygons are coded reservoir_or_dam in the outcome table although they are settlement/construction areas, and, like the dam and bridge polygons, they are not added back in the exclusions-included sensitivity run."
       - "The reach end, km 35, is the draft-paper value (14.5), not a documented end point; it was kept by the user."
+      - "The valid-fraction filter (below 0.7) removed 96 of 559 rows and removed non-forest banks more often than forested ones (share with no forest 37.5% dropped vs 22.2% kept; mean forest fraction 0.32 vs 0.45), so the forest comparison rests on fewer non-forest banks and on those with less pre-event bare or built ground."
     # Report text only (placebo report limitations).
     centerline_traced_on: "OpenStreetMap waterway (osmnx), checked by the user in QGIS against Esri World Imagery Wayback"
     # Independent validation edges (14.13), decided by the user. A point is valid
