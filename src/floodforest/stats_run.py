@@ -173,6 +173,7 @@ def fit_run(df: pd.DataFrame, cfg, with_sections: bool, trim: bool = True,
         except Exception as exc:
             out["support"] = {"error": f"{type(exc).__name__}: {exc}; Model A fitted untrimmed"}
     out["a_rows"] = int(len(a_df))
+    out["_rhs_a_fitted"] = rhs_for(a_df, cfg, with_sections)   # after trimming: what is fitted
     out["a_stations"] = int(a_df.station_id.nunique())
     out["a_segments"] = int(a_df.segment_id.nunique())
     out["a_blocks"] = int(a_df.block_id.nunique())
@@ -707,6 +708,22 @@ def event_limitations(event, event_key: str) -> list[str]:
     return ["", "## Limitations", "", *lines] if lines else []
 
 
+def model_a_formula_line(primary: dict) -> str:
+    """The Model A formula as fitted (after common-support trimming), naming any term left
+    out because it is constant in the trimmed rows. Unchanged text when nothing is left out."""
+    fitted = primary.get("_rhs_a_fitted", primary["rhs_a"])
+    line = (f"Model A (8.2, 14.16, 14.18): `y ~ {fitted}`. OLS for reach height and "
+            "log1p(reach distance); logistic for overtopped.")
+    dropped = [t for t in primary["rhs_a"].split(" + ") if t not in fitted.split(" + ")]
+    if dropped:
+        names = ", ".join(f"`{t}`" for t in dropped)
+        line += (f" {names} {'is' if len(dropped) == 1 else 'are'} in the formula before "
+                 "trimming but left out of the fit because "
+                 f"{'it is' if len(dropped) == 1 else 'they are'} constant in the trimmed "
+                 "Model A rows.")
+    return line
+
+
 def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, placebo_drop,
             checks, verdict, reasons, flips, standin_note=None) -> str:
     A, B = primary["A"], primary["B"]
@@ -740,8 +757,7 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
         *report_lines(flood_records(event, event_key)),
         "## Models",
         "",
-        f"Model A (8.2, 14.16, 14.18): `y ~ {primary['rhs_a']}`. OLS for reach height and "
-        "log1p(reach distance); logistic for overtopped.",
+        model_a_formula_line(primary),
         "",
         f"Model B (8.3): `(y_L - y_R) ~ {b_rhs_for(primary['_pairs'])}`, stations with both banks "
         "in the analysis set; not trimmed (14.8).",
