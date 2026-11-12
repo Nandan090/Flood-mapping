@@ -427,6 +427,10 @@ def run_stats(event_key: str, config_path: str | Path | None = None,
     path = out_dir / "stats_summary.json"
     path.write_text(json.dumps(summary, indent=2, default=_json), encoding="utf-8")
     written.append(path)
+    print(f"Sensitivity: {COLLINEAR_RUN} (descriptive; not in the verdict) ...")
+    sens = collinear_sensitivity(primary["_a_df"], cfg, sections)
+    written.append(_save(collinear_rows(table[table.run == "primary"], primary["_rhs_a_fitted"],
+                                        sens), out_dir / COLLINEAR_NAME))
     for p in written:
         print(p.relative_to(PROJECT_ROOT))
     return written
@@ -722,6 +726,88 @@ def model_a_formula_line(primary: dict) -> str:
                  f"{'it is' if len(dropped) == 1 else 'they are'} constant in the trimmed "
                  "Model A rows.")
     return line
+
+
+# ---------------------------------------------------------------------------
+# Sensitivity: Model A without the collinear controls (user decision 2026-11-13).
+# Descriptive only: not in stats_results.csv, STATS_REPORT.md or the 8.10 sign flips.
+# ---------------------------------------------------------------------------
+
+COLLINEAR_CONTROLS = ("bank_elev_m", "log10_upa", "valley_wall_found")
+COLLINEAR_RUN = "Model A without collinear controls"
+COLLINEAR_NAME = "stats_collinear_sensitivity.csv"
+
+
+def without_terms(rhs: str, terms) -> str:
+    return " + ".join(t for t in rhs.split(" + ") if t not in set(terms))
+
+
+def collinear_sensitivity(a_df: pd.DataFrame, cfg, with_sections: bool) -> dict:
+    """Model A on the primary's trimmed rows without COLLINEAR_CONTROLS; same bootstrap."""
+    rhs = without_terms(rhs_for(a_df, cfg, with_sections), COLLINEAR_CONTROLS)
+    out = {"rhs": rhs, "rows": int(len(a_df)),
+           "A": {y: _wild(a_df, y, rhs, "forest_frac", cfg) for y in ("y_height", "y_logdist")}}
+    out["A"]["y_over"] = _logit(a_df, rhs, cfg)
+    return out
+
+
+def collinear_rows(primary_rows: pd.DataFrame, primary_rhs: str, sens: dict) -> pd.DataFrame:
+    """Forest's estimate under the primary and the sensitivity, side by side by outcome."""
+    rows = []
+    for outcome in ("y_height", "y_logdist", "y_over"):
+        p = primary_rows[(primary_rows.model == "A") & (primary_rows.outcome == outcome)]
+        p = p.iloc[0].to_dict() if len(p) else {}
+        rows.append({"run": "primary", "outcome": outcome, "rows": p.get("rows"),
+                     "beta": p.get("beta"), "lo": p.get("lo"), "hi": p.get("hi"),
+                     "p0": p.get("p0"), "odds_ratio": p.get("odds_ratio"),
+                     "interval_scale": p.get("interval_scale"), "error": p.get("error"),
+                     "rhs": primary_rhs})
+        r = sens["A"][outcome]
+        row = {"run": COLLINEAR_RUN, "outcome": outcome, "rows": sens["rows"], "rhs": sens["rhs"]}
+        if "error" in r:
+            row["error"] = r["error"]
+        elif outcome == "y_over":
+            row.update(beta=r["beta"], lo=r["or_interval"][0], hi=r["or_interval"][1],
+                       odds_ratio=r["odds_ratio"], interval_scale="odds ratio")
+        else:
+            row.update(beta=r["beta"], lo=r["interval"][0], hi=r["interval"][1], p0=r["p0"],
+                       interval_scale="beta")
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def run_collinear_sensitivity(event_key: str, config_path: str | Path | None = None) -> Path:
+    """The collinear-controls sensitivity alone, from the event's existing stats outputs.
+
+    Rebuilds the primary Model A rows as fit_run does and checks them against
+    stats_summary.json; reads the primary estimates from stats_results.csv. Writes only
+    stats_collinear_sensitivity.csv; no existing stats file is rewritten."""
+    cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
+    event = getattr(cfg.events, event_key)
+    out_root = PROJECT_ROOT / cfg.paths.outputs
+    out_dir = out_root / event_key / "stats"
+    T = pd.read_csv(out_root / event_key / "transects.csv")
+    L = pd.read_csv(out_root / event_key / "transects_labels.csv")
+    base = analysis_rows(T, L, cfg)
+    df = S.model_frame(base[base["in_set"]], f"forest_frac_{int(cfg.belt_width_m)}", "fab", None)
+    sections = bool(event.section_breaks_km)
+    a_all = df[df["a_ok"]]
+    controls = rhs_for(a_all, cfg, sections).split(" + ", 1)[1]
+    cs = S.common_support(a_all, controls, float(cfg.forest_high_threshold),
+                          float(cfg.forest_high_min_share), float(cfg.overlap_min_row_fraction),
+                          int(cfg.overlap_min_segments))
+    a_df = a_all[cs["keep"]]
+    summary = json.loads((out_dir / "stats_summary.json").read_text(encoding="utf-8"))
+    if len(a_df) != int(summary["primary"]["a_rows"]):
+        raise RuntimeError(f"Rebuilt Model A rows ({len(a_df)}) differ from the stats step's "
+                           f"({summary['primary']['a_rows']}); nothing was written.")
+    table = pd.read_csv(out_dir / "stats_results.csv")
+    sens = collinear_sensitivity(a_df, cfg, sections)
+    path = out_dir / COLLINEAR_NAME
+    collinear_rows(table[table.run == "primary"], rhs_for(a_df, cfg, sections), sens).to_csv(
+        path, index=False)
+    print(path.relative_to(PROJECT_ROOT))
+    return path
 
 
 def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, placebo_drop,
