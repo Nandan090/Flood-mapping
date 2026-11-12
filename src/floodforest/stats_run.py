@@ -511,8 +511,10 @@ def pending_lines(checks: dict) -> list[str]:
              if any(S.not_run(checks.get(k)) for k in keys)]
     if not names:
         return []
+    one = len(names) == 1
     return [f"**Not yet run for this event: {' and '.join(names)}. The verdict is pending "
-            "until they are; their checks below read 'not yet run'.**", ""]
+            f"until {'it is' if one else 'they are'} run; {'its' if one else 'their'} checks "
+            "below read 'not yet run'.**", ""]
 
 
 def _verdict(primary, runs, placebo_runs, cfg, flips, event_key):

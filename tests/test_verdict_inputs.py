@@ -98,4 +98,19 @@ def test_pending_note_in_the_report():
     assert pending_lines(_checks()) == []
     assert pending_lines(_checks(placebo_null=False)) == []
     lines = pending_lines(_checks(placebo_null=S.NOT_RUN, **NOT_RUN_VALIDATION))
-    assert lines[0].startswith("**Not yet run for this event: validation (14.13) and placebo (8.9).")
+    assert lines[0] == ("**Not yet run for this event: validation (14.13) and placebo (8.9). The "
+                        "verdict is pending until they are run; their checks below read "
+                        "'not yet run'.**")
+
+
+def test_pending_note_names_only_what_is_missing():
+    """Placebo run, validation not: the note names validation alone, in the singular."""
+    only_validation = pending_lines(_checks(placebo_null=False, **NOT_RUN_VALIDATION))
+    assert only_validation[0] == ("**Not yet run for this event: validation (14.13). The verdict "
+                                  "is pending until it is run; its checks below read "
+                                  "'not yet run'.**")
+    assert "placebo" not in only_validation[0]
+    only_placebo = pending_lines(_checks(placebo_null=S.NOT_RUN))
+    assert only_placebo[0].startswith("**Not yet run for this event: placebo (8.9). The verdict "
+                                      "is pending until it is run;")
+    assert "validation" not in only_placebo[0]
