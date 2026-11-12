@@ -16,3 +16,34 @@ prompts.md
 research-premise.md
 terminology.md
 results/placebo_check_lende/**/rasters/
+
+# Rasters and GIS working files
+*.tif
+*.tiff
+*.vrt
+*.gpkg
+*.qgz
+*.qgs
+*.qgd
+*.aux.xml
+
+# Credentials (Earth Engine keeps its own in the user profile)
+.env
+.env.*
+*.pem
+*.key
+*.p12
+credentials*.json
+*service*account*.json
+client_secret*.json
+
+# Caches, local scratch and backups
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+scratch/
+tmp/
+*.bak
+*_backup/
+backup*/
+pytest_out*.txt
