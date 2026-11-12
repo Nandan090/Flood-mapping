@@ -281,7 +281,43 @@ def decide_verdict(checks: dict) -> tuple[str, list[str]]:
       a_height_neg_sig, b_height_neg_sig, dist_same_sign, labels_same_sign,
       dems_same_sign, placebo_null, validation_ok, enough_blocks, overlap_ok,
       model_b_informative, validated, no_sign_flips, all_include_null, all_narrow.
+
+    validated, validation_ok and placebo_null may instead be NOT_RUN when the event has no
+    validation or no placebo yet. The verdict is then pending: a missing input is never read
+    as a failed one. The other caps and unmet checks are still listed.
     """
+    pending = [name for name, keys in PENDING_INPUTS
+               if any(not_run(checks.get(k)) for k in keys)]
+    caps, failed = _caps_and_unmet(checks)
+    if pending:
+        waiting = [f"{name} not yet run for this event; the verdict waits for it"
+                   for name in pending]
+        names = " and ".join(name.split(" (")[0] for name in pending)
+        return f"Pending ({names} not yet run)", waiting + caps + failed
+    if not caps and not failed:
+        return "Consistent with a protective association", []
+    if not caps and checks["all_include_null"] and checks["all_narrow"]:
+        return "No evidence of association", []
+    reasons = caps + failed
+    if checks["all_include_null"] and not checks["all_narrow"]:
+        reasons.append("intervals include the null but are not reasonably narrow (14.10)")
+    return "Inconclusive", reasons
+
+
+NOT_RUN = "not yet run"
+PENDING_INPUTS = (("validation (14.13)", ("validated", "validation_ok")),
+                  ("placebo (8.9)", ("placebo_null",)))
+
+
+def not_run(value) -> bool:
+    return isinstance(value, str) and value == NOT_RUN
+
+
+def _caps_and_unmet(checks: dict) -> tuple[list[str], list[str]]:
+    """The caps and the unmet protective checks; inputs not yet run count as neither."""
+    def fails(key):
+        return not not_run(checks[key]) and not checks[key]
+
     caps = []
     if not checks["enough_blocks"]:
         caps.append("fewer blocks than the minimum (14.15)")
@@ -289,30 +325,22 @@ def decide_verdict(checks: dict) -> tuple[str, list[str]]:
         caps.append("overlap too thin (8.1)")
     if not checks["model_b_informative"]:
         caps.append("Model B uninformative (14.8)")
-    if not checks["validated"]:
+    if fails("validated"):
         caps.append("not validated (14.13)")
-    if not checks["placebo_null"]:
+    if fails("placebo_null"):
         caps.append("placebo not null (8.9): the main result cannot be trusted")
     if not checks["no_sign_flips"]:
         caps.append("sign flips across sensitivity runs (8.10)")
     protective = [
-        ("Model A reach height: beta < 0, interval excludes 0", checks["a_height_neg_sig"]),
-        ("Model B reach height: beta < 0, interval excludes 0", checks["b_height_neg_sig"]),
-        ("reach distance: same sign in Model A and B", checks["dist_same_sign"]),
-        ("same sign under optical-only and radar-only labels", checks["labels_same_sign"]),
-        ("same sign under both DEMs", checks["dems_same_sign"]),
-        ("placebo null", checks["placebo_null"]),
-        ("validation omission not materially higher on forested banks", checks["validation_ok"]),
+        ("Model A reach height: beta < 0, interval excludes 0", "a_height_neg_sig"),
+        ("Model B reach height: beta < 0, interval excludes 0", "b_height_neg_sig"),
+        ("reach distance: same sign in Model A and B", "dist_same_sign"),
+        ("same sign under optical-only and radar-only labels", "labels_same_sign"),
+        ("same sign under both DEMs", "dems_same_sign"),
+        ("placebo null", "placebo_null"),
+        ("validation omission not materially higher on forested banks", "validation_ok"),
     ]
-    failed = [name for name, ok in protective if not ok]
-    if not caps and not failed:
-        return "Consistent with a protective association", []
-    if not caps and checks["all_include_null"] and checks["all_narrow"]:
-        return "No evidence of association", []
-    reasons = caps + [f"not met: {name}" for name in failed]
-    if checks["all_include_null"] and not checks["all_narrow"]:
-        reasons.append("intervals include the null but are not reasonably narrow (14.10)")
-    return "Inconclusive", reasons
+    return caps, [f"not met: {name}" for name, key in protective if fails(key)]
 
 
 def fit_model_a(table: pd.DataFrame, outcome: str, formula_rhs: str):

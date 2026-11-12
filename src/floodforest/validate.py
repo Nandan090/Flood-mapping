@@ -996,7 +996,8 @@ def run_validation_comparison(event_key: str = "melamchi2021",
     low_total = int(len(low_coverage))
     unique_stations = int(points.station_id.nunique())
 
-    results_dir = PROJECT_ROOT / "results"
+    from .config import validation_results_dir
+    results_dir = validation_results_dir(cfg, event_key)
     results_dir.mkdir(parents=True, exist_ok=True)
     per_point_path = results_dir / "validation_per_point.csv"
     summary_path = results_dir / "validation_summary.csv"

@@ -15,7 +15,8 @@ import numpy as np
 import pandas as pd
 
 from . import stats as S
-from .config import PROJECT_ROOT, load_config, placebo_key, rebuild_variants, variant_key
+from .config import (PROJECT_ROOT, load_config, placebo_key, rebuild_variants,
+                     validation_results_dir, variant_key)
 from .floods import flood_records, report_lines
 
 LABEL_DYNAMIC = {"river_not_visible", "near_bank_nodata", "low_valid_fraction", "belt_no_data"}
@@ -411,7 +412,7 @@ def run_stats(event_key: str, config_path: str | Path | None = None,
     written.append(_save(pd.DataFrame(flips, columns=["run", "model", "outcome", "primary_beta",
                                                       "run_beta", "run_p0"]),
                          out_dir / "stats_sign_flips.csv"))
-    checks, verdict, reasons = _verdict(primary, runs, placebo_runs, cfg, flips)
+    checks, verdict, reasons = _verdict(primary, runs, placebo_runs, cfg, flips, event_key)
     placebo_drop = _placebo_dropping(P, forest, forest_terciles) if placebo_ok else None
     written += _figures(out_dir, primary, table, cfg)
     text = _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs,
@@ -476,8 +477,19 @@ def _includes_null(r: dict, alpha: float) -> bool:
     return r["p0"] > alpha
 
 
-def _validation_flag(cfg) -> tuple[bool, str]:
-    path = PROJECT_ROOT / cfg.paths.results / "validation_summary.csv"
+def _validation_inputs(cfg, event_key: str) -> tuple:
+    """(validation_ok, validation_note, validated) from this event's own validation files.
+
+    An event with neither file has not been validated yet: all three are NOT_RUN, never
+    another event's numbers and never a failure."""
+    folder = validation_results_dir(cfg, event_key)
+    summary, per_point = folder / "validation_summary.csv", folder / "validation_per_point.csv"
+    if not summary.exists() and not per_point.exists():
+        return S.NOT_RUN, S.NOT_RUN, S.NOT_RUN
+    return (*_validation_flag(cfg, summary), per_point.exists())
+
+
+def _validation_flag(cfg, path) -> tuple[bool, str]:
     if not path.exists():
         return False, "no validation summary"
     v = pd.read_csv(path)
@@ -493,10 +505,20 @@ def _validation_flag(cfg) -> tuple[bool, str]:
         f"{cfg.validation_recall_gap * 100:.0f})")
 
 
-def _verdict(primary, runs, placebo_runs, cfg, flips):
+def pending_lines(checks: dict) -> list[str]:
+    """A bold note naming the verdict inputs this event has not run yet (none: no lines)."""
+    names = [name for name, keys in S.PENDING_INPUTS
+             if any(S.not_run(checks.get(k)) for k in keys)]
+    if not names:
+        return []
+    return [f"**Not yet run for this event: {' and '.join(names)}. The verdict is pending "
+            "until they are; their checks below read 'not yet run'.**", ""]
+
+
+def _verdict(primary, runs, placebo_runs, cfg, flips, event_key):
     A, B = primary["A"], primary["B"]
     alpha = float(cfg.interval_alpha)
-    val_ok, val_note = _validation_flag(cfg)
+    val_ok, val_note, validated = _validation_inputs(cfg, event_key)
     narrow = []
     for model in (A, B):
         for y in ("y_height", "y_logdist"):
@@ -516,7 +538,9 @@ def _verdict(primary, runs, placebo_runs, cfg, flips):
                     continue
                 if not _includes_null(r, alpha):
                     placebo_effects.append(f"Model {model} {OUT_NAMES[y]}: {_ci(r)}")
-    placebo_null = bool(pl) and not placebo_effects
+    # No placebo run yet is not a failed placebo (8.9): the check waits for it.
+    placebo_null = S.NOT_RUN if not placebo_runs else bool(pl) and not placebo_effects
+    placebo_note = S.NOT_RUN if not placebo_runs else "; ".join(placebo_effects) or "none"
     checks = {
         "a_height_neg_sig": _neg_sig(A["y_height"], alpha),
         "b_height_neg_sig": _neg_sig(B["y_height"], alpha),
@@ -525,9 +549,9 @@ def _verdict(primary, runs, placebo_runs, cfg, flips):
                                 for l in ("optical_only", "sar_only")),
         "dems_same_sign": _neg(runs["DEM Copernicus GLO-30"]["A"]["y_height"]),
         "placebo_null": placebo_null,
-        "placebo_effects": "; ".join(placebo_effects) or "none",
+        "placebo_effects": placebo_note,
         "validation_ok": val_ok, "validation_note": val_note,
-        "validated": (PROJECT_ROOT / cfg.paths.results / "validation_per_point.csv").exists(),
+        "validated": validated,
         "enough_blocks": S.enough_blocks(primary["a_blocks"], int(cfg.min_blocks)),
         "overlap_ok": not primary.get("support", {}).get("too_thin", True),
         "model_b_informative": primary["b_info"]["informative"],
@@ -700,7 +724,8 @@ def _report(event_key, event, cfg, primary, runs, notes, table, placebo_runs, pl
         "",
         *([f"**The placebo shows a forest association ({checks['placebo_effects']}). Under 8.9 "
            "the method is producing artefacts and the main result cannot be trusted.**", ""]
-          if not checks["placebo_null"] else []),
+          if not S.not_run(checks["placebo_null"]) and not checks["placebo_null"] else []),
+        *pending_lines(checks),
         *([f"**Model A and Model B disagree in sign (8.3): {'; '.join(disagree)}.**", ""]
           if disagree else []),
         *([f"**{len(flips)} sensitivity estimates flip sign relative to the primary run "

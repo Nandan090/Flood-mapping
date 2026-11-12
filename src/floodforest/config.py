@@ -39,6 +39,16 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> SimpleNamespace:
 
 PLACEBO_SUFFIX = "_placebo"
 
+# The independent validation (14.13) was built for this event first; its files sit at the top
+# of the results folder. Any other event's validation files go to results/<event>/.
+SHARED_RESULTS_VALIDATION_EVENT = "melamchi2021"
+
+
+def validation_results_dir(cfg, event_key: str) -> Path:
+    """Where one event's validation_per_point.csv and validation_summary.csv live."""
+    root = PROJECT_ROOT / cfg.paths.results
+    return root if event_key == SHARED_RESULTS_VALIDATION_EVENT else root / event_key
+
 
 def placebo_key(event_key: str) -> str:
     return f"{event_key}{PLACEBO_SUFFIX}"
