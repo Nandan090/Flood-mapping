@@ -287,6 +287,25 @@ def test_subset_coverage_counts_unassigned_stations_apart():
     assert "1 of those was skipped or removed" in note
 
 
+def test_report_notes_list_config_notes_and_unreviewed_large_errors_outside_main():
+    from types import SimpleNamespace
+
+    from floodforest.validate import report_notes
+
+    points = pd.DataFrame({"station_id": [1, 2, 3, 4], "side": ["left", "right", "left", "left"],
+                           "main_include": [True, False, False, False],
+                           "diff_m": [-30.0, -25.0, 5.0, 40.0],
+                           "review_status": ["no visible change", "not reviewed",
+                                             "not reviewed", "visible change"]})
+    event = SimpleNamespace(validation=SimpleNamespace(report_notes=["One cluster."]))
+    lines = report_notes(event, points, 20.0, is_melamchi=False)
+    assert lines[:3] == ["### Notes", "", "- One cluster."]
+    assert lines[3].endswith("were not reviewed: 2-right.")
+    assert report_notes(event, points, 20.0, is_melamchi=True) == []
+    quiet = SimpleNamespace(validation=SimpleNamespace())
+    assert report_notes(quiet, points.iloc[:1], 20.0, is_melamchi=False) == []
+
+
 def _cutoff_frame():
     return pd.DataFrame({
         "forest_group": ["Low"] * 4 + ["Mid"] * 2 + ["High"] * 4,

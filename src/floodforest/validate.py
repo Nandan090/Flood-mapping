@@ -1162,6 +1162,26 @@ def _write_validation_plot(points: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
+def report_notes(event, points: pd.DataFrame, under_detect_m: float,
+                 is_melamchi: bool) -> list[str]:
+    """A Notes section for the validation report: the event's notes from config, and (not
+    for melamchi2021) the points outside the main set with a large error that were not
+    reviewed. Empty when there is nothing to note."""
+    if is_melamchi:
+        return []
+    notes = [str(n) for n in (getattr(event.validation, "report_notes", None) or [])]
+    outside = points[~points.main_include & (points.diff_m.abs() > under_detect_m)
+                     & (points.review_status == "not reviewed")]
+    if len(outside):
+        names = ", ".join(f"{int(r.station_id)}-{r.side}"
+                          for r in outside.sort_values(["station_id", "side"]).itertuples())
+        notes.append(f"Points outside the main set whose computed and validated reach differ "
+                     f"by more than {under_detect_m:g} m were not reviewed: {names}.")
+    if not notes:
+        return []
+    return ["### Notes", "", *[f"- {n}" for n in notes], ""]
+
+
 def comparison_date_window(event) -> tuple[str, str]:
     """The capture-date window compare checks: the event's own, else 14.25's (melamchi2021)."""
     from .validation_kml import VALIDATION_DATE_END, VALIDATION_DATE_START
@@ -1629,6 +1649,7 @@ def run_validation_comparison(event_key: str = "melamchi2021",
         "Negative diff means the computed reach is shorter than the digitised reach. These "
         "descriptive validation results do not establish that forest causes a difference.",
         "",
+        *report_notes(event, points, under_detect_m, is_melamchi),
         "## Still needed",
         "",
         "Review the station-level comparison and limitations, then complete the study's separate "
