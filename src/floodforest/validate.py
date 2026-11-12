@@ -176,6 +176,105 @@ Any published flood-extent map goes in this same folder, beside `validation_edge
 """
 
 
+def dated_digitising_instructions(event_name: str, when: str, crs: str, n: int,
+                                  imagery: str, window, notes: list[str]) -> str:
+    """Steps for an event whose validation block sets the imagery and its capture-date window.
+
+    The fields match what the edges step reads: station_id, side, image_date, confidence, note.
+    """
+    start, end = _long_date(window.start), _long_date(window.end)
+    extra = "".join(f"\n- {str(note).strip()}" for note in notes)
+    return f"""# Marking the flood edge
+
+This is for the {event_name} ({when}).
+
+Mark where the debris flood stopped, on each bank, at the {n} places in this folder. Mark only what you can see in imagery taken after the flood.
+
+Do not open the results table, the cross-section figures, or any file outside this folder.
+
+## Imagery
+
+- Use {imagery} captured between {start} and {end}. Check the capture date of the image itself, not a release date.
+- Prefer the earliest clear image after the flood: later images can show repairs and newer deposits.
+- Record the capture date for every point.
+- Do not use Sentinel-2 or any flood map.{extra}
+
+## Files
+
+- `sample_stations.geojson` — one point on the river at each place.
+- `sample_transects.gpkg` — the same points (layer `stations`) and the two lines at each place (layer `transects`).
+
+The layers use {crs}. Left and right are as you look downstream. Each line starts at the station and runs out across one bank. The line's `side` field says which bank.
+
+## In QGIS
+
+1. Add both layers from `sample_transects.gpkg`, and display the place in {imagery} beside it.
+2. Turn on snapping to the transect lines, so a point you add sits on the line.
+3. Create a new point layer in the same CRS, with these fields:
+   - `station_id` (whole number)
+   - `side` (text: `left` or `right`)
+   - `image_date` (text, YYYY-MM-DD: the capture date of the image you used)
+   - `confidence` (whole number: 1 sure, 2 fairly sure, 3 unsure)
+   - `note` (text, may be empty)
+
+   Save it in this folder as `validation_edges.gpkg`.
+
+## At each place
+
+1. Read the station's `station_id`.
+2. On the left line and on the right line, add one point at the outer limit of the flood: the furthest point from the river, along that line, where debris, erosion, or damaged ground from this flood is still visible.
+3. Snap the point to the line. Fill in `station_id`, `side`, `image_date` and `confidence`.
+4. If the flood did not leave the river on that bank, put the point on the line at the edge of the channel and write `flood stayed in channel` in `note`.
+5. If shadow, cloud or trees hide the edge, skip that bank. Leave it out. Do not guess.
+6. If no image in the date window shows the place, skip the place.
+
+A place can have two points, one, or none. Save the layer when you finish.
+
+Any published flood-extent map goes in this same folder, beside `validation_edges.gpkg`.
+"""
+
+
+def sample_settings(event, cfg) -> dict:
+    """Sample size, seed and reaches: the event's validation block, else the global settings.
+
+    An event that sets its own sample must record its seed in config."""
+    block = getattr(event, "validation", None)
+    if block is None or not hasattr(block, "sample_size"):
+        return {"n": int(cfg.validation_sample_size), "seed": int(cfg.seed), "reaches": None,
+                "drawn_on": None, "block": None}
+    if getattr(block, "sample_seed", None) is None:
+        raise RuntimeError("validation.sample_seed must be set in config before the sample "
+                           "is drawn.")
+    reaches = [tuple(float(v) for v in pair) for pair in (block.sample_reaches_km or [])]
+    if any(len(pair) != 2 or pair[0] >= pair[1] for pair in reaches):
+        raise RuntimeError(f"validation.sample_reaches_km must be [from, to] pairs: {reaches}.")
+    return {"n": int(block.sample_size), "seed": int(block.sample_seed),
+            "reaches": reaches or None, "drawn_on": getattr(block, "sample_drawn_on", None),
+            "block": block}
+
+
+def in_reaches(river_km: pd.Series, reaches) -> pd.Series:
+    """True where river_km lies inside any [from, to] reach (both ends included)."""
+    keep = pd.Series(False, index=river_km.index)
+    for lo, hi in reaches:
+        keep |= (river_km >= lo) & (river_km <= hi)
+    return keep
+
+
+def refuse_redraw(event_key: str, folder: Path, provenance: dict, drawn_on) -> None:
+    """The validation sample is drawn once. Any trace of an earlier draw stops the step."""
+    traces = [p.name for p in (folder / "sample_stations.geojson",
+                               folder / "sample_transects.gpkg") if p.exists()]
+    if "validation_sample" in provenance:
+        traces.append("provenance.json validation_sample")
+    if drawn_on:
+        traces.append(f"config validation.sample_drawn_on = {drawn_on}")
+    if traces:
+        raise RuntimeError(
+            f"The {event_key} validation sample was already drawn ({', '.join(traces)}). "
+            "It is never redrawn; nothing was written.")
+
+
 def _long_date(iso: str) -> str:
     year, month, day = (int(part) for part in str(iso).split("-"))
     return f"{day} {_MONTHS[month - 1]} {year}"
@@ -203,15 +302,27 @@ def run_validation_sample(event_key: str, config_path: str | Path | None = None)
     if lines.crs is None or lines.crs.to_string() != cfg.crs:
         raise RuntimeError(f"Transects CRS is {lines.crs}, expected {cfg.crs}.")
 
+    settings = sample_settings(event, cfg)
+    folder = PROJECT_ROOT / cfg.paths.data / event_key / "validation"
+    prov_path = PROJECT_ROOT / cfg.paths.outputs / event_key / "provenance.json"
+    if not prov_path.exists():
+        raise FileNotFoundError(f"{prov_path} is missing. Run the earlier steps first.")
+    provenance = json.loads(prov_path.read_text(encoding="utf-8"))
+    if settings["block"] is not None:
+        refuse_redraw(event_key, folder, provenance, settings["drawn_on"])
+
     forest_column = f"forest_frac_{int(cfg.belt_width_m)}"
-    values = eligible_station_forest(lines, forest_column)
+    pool = lines
+    if settings["reaches"]:
+        # Forest groups are formed from the stations inside these reaches only.
+        pool = lines[in_reaches(lines["river_km"], settings["reaches"])]
+    values = eligible_station_forest(pool, forest_column)
     n_bins = int(cfg.validation_terciles)
     groups = tercile_groups(values, n_bins)
-    chosen = draw_sample(groups, int(cfg.validation_sample_size), int(cfg.seed))
+    chosen = draw_sample(groups, settings["n"], settings["seed"])
     points, sample_lines = sample_layers(lines, chosen)
     counts = [int(np.isin(group, chosen).sum()) for group in groups]
 
-    folder = PROJECT_ROOT / cfg.paths.data / event_key / "validation"
     folder.mkdir(parents=True, exist_ok=True)
     stations_path = folder / "sample_stations.geojson"
     transects_path = folder / "sample_transects.gpkg"
@@ -221,16 +332,19 @@ def run_validation_sample(event_key: str, config_path: str | Path | None = None)
     points.to_file(stations_path, driver="GeoJSON")
     sample_lines.to_file(transects_path, layer="transects", driver="GPKG")
     points.to_file(transects_path, layer="stations", driver="GPKG", mode="a")
-    notes_path.write_text(digitising_instructions(event.name, _when(event), cfg.crs), encoding="utf-8")
+    block = settings["block"]
+    if block is None:
+        text = digitising_instructions(event.name, _when(event), cfg.crs)
+    else:
+        text = dated_digitising_instructions(
+            event.name, _when(event), cfg.crs, len(chosen), block.imagery_source,
+            block.image_date_window, list(getattr(block, "digitising_notes", None) or []))
+    notes_path.write_text(text, encoding="utf-8")
 
-    prov_path = PROJECT_ROOT / cfg.paths.outputs / event_key / "provenance.json"
-    if not prov_path.exists():
-        raise FileNotFoundError(f"{prov_path} is missing. Run the earlier steps first.")
-    provenance = json.loads(prov_path.read_text(encoding="utf-8"))
     written = [stations_path, transects_path, notes_path]
-    provenance["validation_sample"] = {
+    record = {
         "n": len(chosen),
-        "seed": int(cfg.seed),
+        "seed": settings["seed"],
         "eligible_stations": int(values.size),
         "per_group_low_to_high": counts,
         "station_ids": chosen,
@@ -241,6 +355,17 @@ def run_validation_sample(event_key: str, config_path: str | Path | None = None)
         ),
         "files": [str(p.relative_to(PROJECT_ROOT)).replace("\\", "/") for p in written],
     }
+    if block is not None:
+        from datetime import date
+        record["drawn_on"] = date.today().isoformat()
+        record["reaches_km"] = [list(pair) for pair in settings["reaches"] or []]
+        record["groups_formed_from"] = ("stations inside reaches_km only"
+                                        if settings["reaches"] else "the whole analysis set")
+        record["per_reach"] = {
+            f"{lo:g}-{hi:g}": int(in_reaches(points["river_km"], [(lo, hi)]).sum())
+            for lo, hi in settings["reaches"] or []}
+        record["never_redrawn"] = True
+    provenance["validation_sample"] = record
     prov_path.write_text(json.dumps(provenance, indent=2), encoding="utf-8")
 
     print(f"Validation sample for {event_key}: {len(chosen)} stations drawn from "
@@ -331,7 +456,9 @@ def import_validation_edges(event_key: str, config_path: str | Path | None = Non
         crs=cfg.crs, max_distance_m=float(cfg.validation_snap_max_m))
 
     forest_column = f"forest_frac_{int(cfg.belt_width_m)}"
-    values = eligible_station_forest(table, forest_column)
+    reaches = sample_settings(getattr(cfg.events, event_key), cfg)["reaches"]
+    pool = table[in_reaches(table["river_km"], reaches)] if reaches else table
+    values = eligible_station_forest(pool, forest_column)
     groups = station_group_labels(values, chosen, int(cfg.validation_terciles))
     coverage = coverage_rows(stations, set(report["stations_written"]), groups)
     coverage_path = folder / "sample_coverage.csv"
