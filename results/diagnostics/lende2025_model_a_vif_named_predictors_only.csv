@@ -1,0 +1,12 @@
+term,df,vif_or_gvif,gvif_1_2df
+forest_frac,1,1.1316,1.0638
+log_channel_width,1,1.2583,1.1217
+gradient,1,1.079,1.0387
+log_valley_width,1,3.0781,1.7545
+wall_slope_deg,1,1.9802,1.4072
+bank_slope_deg,1,4.5606,2.1356
+log10_upa,1,4.9361,2.2217
+outer_bend,1,1.1085,1.0529
+curvature,1,1.0509,1.0252
+bank_elev_m,1,4.8849,2.2102
+channel_resolved,1,1.1073,1.0523

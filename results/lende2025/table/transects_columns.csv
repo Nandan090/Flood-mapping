@@ -1,0 +1,54 @@
+column,meaning
+station_id,"station number, 0 at the reach start, every station_spacing_m"
+side,"bank, left or right looking downstream"
+river_km,distance along the verified centerline from the start (km)
+segment_id,"floor(river_km), 1 km blocks for reporting"
+block_id,3 km bootstrap block (14.15)
+river_section,"0 above the first section break, 1 below it, ... (14.16)"
+in_reach,1 inside reach_start_km to reach_end_km (14.5)
+station_x,"station easting, EPSG:32645 (m)"
+station_y,"station northing, EPSG:32645 (m)"
+usable_length_m,distance to the first same-bank transect crossing within 1 km; 1500 if none (14.21). Every measurement stops here
+usable_limited_by_neighbour,1 if usable_length_m is set by a neighbouring transect
+channel_resolved,1 if a pre-event active channel run was found (14.18)
+centre_offset_m,"signed distance from the station to the channel midpoint (m, left positive)"
+channel_width_m,length of the chosen channel run (m); 10 when unresolved
+bank_top_from_station_m,bank top distance from the station along this side's normal (m)
+bank_top_sample_offset_m,distance from the bank top to the first sample used (m); 5 when the channel is unresolved
+river_visible_post,1 if within 30 m of the station a sample has NDVI_post < 0.30 or is impacted in the combined label (14.20)
+exclude_reasons,comma-separated reason codes; empty means the row is used
+analysis_set,1 if in the reach with no reason code (primary models)
+reach_distance_m_{dem},"bank top to the edge of the impacted run (m), combined label; missing where river_not_visible"
+reach_height_m_{dem},"max(0, elevation at the reach edge - z0) (m), combined label"
+overtopped_{dem},1 if reach_distance_m >= 20
+censored_{dem},1 if the true reach is at least the measured one
+censor_reason_{dem},"nodata_gap, valley_wall (edge within 10 m of the wall, 14.23 b), profile_end or neighbour_limit"
+reach_height_unc_m_{dem},10 x tan(slope at the reach edge) (m)
+detached_reach_m_{dem},"furthest connected impact sample, gaps ignored (m) (14.6)"
+valid_fraction_{dem},"share of samples beyond the bank top, up to the valley wall, with label data"
+reach_edge_from_station_m_{dem},reach edge distance from the station along this side (m)
+near_bank_nodata_{dem},"1 if no valid sample decides the start (14.24): none within 30 m of the bank top, or the first is a non-impacted sample beyond 20 m. Outcomes are then missing"
+reach_distance_m_wins_{dem},reach_distance_m capped at the analysis-set 97.5th percentile (14.19 f)
+reach_height_m_wins_{dem},reach_height_m capped at the analysis-set 97.5th percentile (14.19 f)
+z0_{dem},"median DEM elevation over the channel run, or at the station when unresolved (m)"
+valley_wall_found_{dem},1 if slope >= 30 deg for >= 50 m was found inside the usable length
+valley_width_m_{dem},"bank top to the valley wall, or to the usable end when not found (m)"
+wall_slope_deg_{dem},mean DEM slope over the 50 m run that defines the valley wall (deg)
+bank_elev_m_{dem},DEM elevation at the bank top sample (m)
+bank_slope_deg_{dem},mean DEM slope in the 100 m belt (deg)
+gradient_{dem},slope of z0 against river_km over +/-500 m (m per km; negative = falling)
+log10_upa,log10 of the largest MERIT upstream area within 300 m of the station (km2)
+curvature,signed turn of the verified line over +/-300 m (rad per km; positive = turns left)
+outer_bend,1 if this bank is on the outside of the bend
+belt_pixels_{w},valid pixels in the W m belt
+belt_clipped_{w},1 if the belt was cut short at usable_length_m
+forest_frac_{w},"forest share of valid belt pixels: DW trees >= 0.5, ETH height >= 5 m, no Hansen loss in [2021, pre year] (exposure F). Where Dynamic World has no observation, WorldCover class 10 replaces the trees test (14.23 a)"
+forest_source_{w},"dynamic_world, worldcover or mixed: which map decided the belt's pixels; none when neither has data"
+forest_source_worldcover_frac_{w},share of decided belt pixels taken from WorldCover
+forest_frac_dw_only_{w},forest share with Dynamic World alone (14.14)
+forest_definition_disagree_frac_{w},share of belt pixels where the two forest rules differ
+forest_frac_worldcover_{w},share of belt pixels in WorldCover class 10
+canopy_height_mean_{w},mean ETH canopy height in the belt (m)
+ndvi_pre_mean_{w},mean pre-event NDVI in the belt
+belt_continuity_{w},largest forest patch area / total forest area in the belt
+prior_loss_frac_{w},share of belt pixels with Hansen loss up to the pre-composite year

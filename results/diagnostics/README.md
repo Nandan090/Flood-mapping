@@ -1,0 +1,5 @@
+# Collinearity diagnostic (descriptive only)
+
+Pairwise correlations (Pearson and Spearman) and variance inflation factors for the Model A predictors on each event's primary Model A rows (analysis set, rows with every Model A value, common-support trimmed), and for the Model B between-bank differences on the Model B pairs. Predictors are taken as they enter the model (log channel width, log valley width). `_vif_fitted_design` uses the full fitted design (spline in river_km, side, river_section where used); multi-column terms get a generalised VIF and GVIF^(1/(2 df)). `_vif_named_predictors_only` leaves out the spline, side and section. Flags: |r| > 0.7, VIF > 5. No model, filter or result was changed; nothing here feeds the stats step. Script: `collinearity_diagnostic.py`.
+
+Note (lende2025): `matches_stats_step.rhs_a` is false because the stats step records the Model A formula from before common-support trimming. After trimming, valley_wall_found is 1 on all 413 rows, so the fitted model (rhs_for on the trimmed rows) leaves it out; this diagnostic uses the fitted formula. Row counts match the stats step for both events.

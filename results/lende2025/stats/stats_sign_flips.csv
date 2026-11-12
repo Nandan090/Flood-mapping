@@ -1,0 +1,3 @@
+run,model,outcome,primary_beta,run_beta,run_p0
+label sar_near,B,y_height,-3.3200239686386763,0.548128125718171,0.4832416208104052
+terraces: bank slope <= 15 deg,A,y_height,-3.509458058388897,0.28481770841479204,0.0

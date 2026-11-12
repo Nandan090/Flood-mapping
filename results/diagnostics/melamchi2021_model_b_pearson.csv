@@ -1,0 +1,7 @@
+,d_forest,d_valley_width_m,d_wall_slope_deg,d_valley_wall_found,d_bank_slope_deg,d_outer_bend
+d_forest,1.0,-0.2906,0.2616,0.222,0.6661,0.1675
+d_valley_width_m,-0.2906,1.0,-0.4827,-0.4683,-0.3184,-0.1232
+d_wall_slope_deg,0.2616,-0.4827,1.0,0.9593,0.2839,0.3322
+d_valley_wall_found,0.222,-0.4683,0.9593,1.0,0.1876,0.2987
+d_bank_slope_deg,0.6661,-0.3184,0.2839,0.1876,1.0,0.2868
+d_outer_bend,0.1675,-0.1232,0.3322,0.2987,0.2868,1.0

@@ -1,0 +1,62 @@
+station_id,side,image_date,confidence,note,edge_lat,edge_lon
+52,right,1/2/2026,1,fresh debris,28.2392405,85.3579694
+52,left,1/2/2026,1,collapsed bank,28.2392381,85.3587914
+53,right,1/2/2026,1,fresh debris,28.2382913,85.3577128
+53,left,1/2/2026,1,collapsed bank,28.2384155,85.3588358
+54,right,1/2/2026,1,fresh debris,28.2374279,85.3575436
+54,left,1/2/2026,1,"collapsed bank, debris",28.2375372,85.3583756
+55,right,1/2/2026,1,debris,28.2366906,85.3578573
+55,left,1/2/2026,1,debris,28.236885,85.3589012
+59,right,1/2/2026,1,flood stayed in channel,28.2334966,85.3598772
+59,left,1/2/2026,1,flood stayed in channel,28.2335844,85.3601511
+60,right,1/2/2026,1,flood stayed in channel,28.2326264,85.3601232
+60,left,1/2/2026,1,flood stayed in channel,28.2327222,85.3604291
+62,right,1/2/2026,1,flood stayed in channel,28.230866,85.3603228
+62,left,1/2/2026,1,flood stayed in channel,28.2309181,85.3605971
+68,right,1/2/2026,1,flood stayed in channel,28.2255454,85.3609195
+68,left,1/2/2026,1,flood stayed in channel,28.225552,85.361159
+69,right,1/2/2026,1,flood stayed in channel,28.2246618,85.3608738
+69,left,1/2/2026,1,flood stayed in channel,28.2246377,85.3612517
+74,right,1/2/2026,1,flood stayed in channel,28.2213143,85.3583436
+74,left,1/2/2026,1,flood stayed in channel,28.220985,85.3587587
+75,left,1/2/2026,1,flood stayed in channel,28.2201739,85.3582915
+89,right,1/2/2026,1,flood stayed in channel,28.2087857,85.3541573
+89,left,1/2/2026,1,flood stayed in channel,28.2088159,85.3544068
+249,right,11/29/2025,1,flood stayed in channel,28.1035292,85.2690283
+249,left,11/29/2025,1,flood stayed in channel,28.1033132,85.269208
+250,right,11/29/2025,1,flood stayed in channel,28.1029244,85.268505
+250,left,11/29/2025,1,flood stayed in channel,28.1024915,85.2687897
+251,right,11/29/2025,1,flood stayed in channel,28.1031347,85.2671609
+251,left,11/29/2025,1,flood stayed in channel,28.1022861,85.267827
+252,right,11/29/2025,1,flood stayed in channel,28.1027605,85.2665242
+252,left,11/29/2025,1,flood stayed in channel,28.1022906,85.2668937
+253,right,11/29/2025,1,flood stayed in channel,28.1019222,85.2660631
+253,left,11/29/2025,1,flood stayed in channel,28.1014769,85.2664351
+260,right,11/29/2025,1,flood stayed in channel,28.0972674,85.2615218
+260,left,11/29/2025,1,flood stayed in channel,28.0969247,85.2618003
+270,right,11/29/2025,1,flood stayed in channel,28.0934573,85.2527116
+270,left,11/29/2025,1,flood stayed in channel,28.0930397,85.2529365
+272,right,11/29/2025,1,flood stayed in channel,28.0930118,85.2507822
+272,left,11/29/2025,1,flood stayed in channel,28.092471,85.2509278
+278,right,11/29/2025,1,flood stayed in channel,28.0925737,85.2447225
+278,left,11/29/2025,1,flood stayed in channel,28.0922438,85.2447542
+283,right,1/20/2026,1,flood stayed in channel,28.0916091,85.2398949
+283,left,1/20/2026,1,flood stayed in channel,28.0910179,85.2400335
+295,right,1/20/2026,1,debris,28.0875054,85.228554
+295,left,1/20/2026,1,debris,28.0867583,85.2297427
+296,right,1/20/2026,1,debris,28.0870698,85.227856
+296,left,1/20/2026,1,debris,28.0860499,85.2291201
+301,right,1/20/2026,1,flood stayed in channel,28.084045,85.2248999
+301,left,1/20/2026,1,flood stayed in channel,28.0835052,85.2252425
+311,right,1/20/2026,1,debris,28.0791138,85.216509
+311,left,1/20/2026,1,debris,28.0781439,85.2176215
+315,right,1/20/2026,1,debris,28.0768424,85.2136433
+315,left,1/20/2026,1,debris,28.0761995,85.2140962
+317,right,1/20/2026,1,debris,28.0759205,85.2119321
+317,left,1/20/2026,1,debris,28.0751906,85.2123697
+331,right,1/20/2026,1,debris,28.0660496,85.2052479
+331,left,1/20/2026,1,debris,28.0663021,85.2060906
+343,right,1/20/2026,1,flood stayed in channel,28.0559426,85.2083961
+343,left,1/20/2026,1,flood stayed in channel,28.0558441,85.208892
+346,right,1/20/2026,1,debris,28.0536134,85.2071202
+346,left,1/20/2026,1,debris,28.0533014,85.207613

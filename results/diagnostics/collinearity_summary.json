@@ -1,0 +1,264 @@
+{
+  "lende2025": {
+    "model_a_rows": 413,
+    "model_a_rhs": "forest_frac + np.log(channel_width_m) + gradient + np.log(valley_width_m) + wall_slope_deg + bank_slope_deg + log10_upa + outer_bend + curvature + bank_elev_m + C(side) + cr(river_km, df=5) + channel_resolved",
+    "model_b_pairs": 166,
+    "model_b_rhs": "d_forest + d_valley_width_m + d_wall_slope_deg + d_valley_wall_found + d_bank_slope_deg + d_outer_bend",
+    "matches_stats_step": {
+      "a_rows": true,
+      "rhs_a": false,
+      "b_stations": true
+    },
+    "model_a_pearson_above_0.7": [
+      {
+        "a": "log_valley_width",
+        "b": "bank_slope_deg",
+        "r": -0.792
+      },
+      {
+        "a": "log10_upa",
+        "b": "bank_elev_m",
+        "r": -0.878
+      },
+      {
+        "a": "log10_upa",
+        "b": "river_km",
+        "r": 0.905
+      },
+      {
+        "a": "bank_elev_m",
+        "b": "river_km",
+        "r": -0.995
+      }
+    ],
+    "model_a_spearman_above_0.7": [
+      {
+        "a": "log_valley_width",
+        "b": "bank_slope_deg",
+        "r": -0.839
+      },
+      {
+        "a": "log10_upa",
+        "b": "bank_elev_m",
+        "r": -0.958
+      },
+      {
+        "a": "log10_upa",
+        "b": "river_km",
+        "r": 0.958
+      },
+      {
+        "a": "bank_elev_m",
+        "b": "river_km",
+        "r": -0.999
+      }
+    ],
+    "model_a_vif_above_5_fitted_design": [
+      {
+        "term": "bank_slope_deg",
+        "df": 1,
+        "vif_or_gvif": 5.21,
+        "gvif_1_2df": 2.28
+      },
+      {
+        "term": "log10_upa",
+        "df": 1,
+        "vif_or_gvif": 23.13,
+        "gvif_1_2df": 4.81
+      },
+      {
+        "term": "bank_elev_m",
+        "df": 1,
+        "vif_or_gvif": 424.75,
+        "gvif_1_2df": 20.61
+      }
+    ],
+    "model_a_multi_column_terms": [
+      {
+        "term": "cr(river_km, df=5)",
+        "df": 5,
+        "vif_or_gvif": 4017.37,
+        "gvif_1_2df": 2.29
+      }
+    ],
+    "model_a_vif_above_5_named_only": [],
+    "model_b_pearson_above_0.7": [],
+    "model_b_spearman_above_0.7": [
+      {
+        "a": "d_valley_width_m",
+        "b": "d_bank_slope_deg",
+        "r": -0.744
+      },
+      {
+        "a": "d_wall_slope_deg",
+        "b": "d_bank_slope_deg",
+        "r": 0.724
+      }
+    ],
+    "model_b_vif_above_5": []
+  },
+  "melamchi2021": {
+    "model_a_rows": 380,
+    "model_a_rhs": "forest_frac + np.log(channel_width_m) + gradient + np.log(valley_width_m) + wall_slope_deg + bank_slope_deg + log10_upa + outer_bend + curvature + bank_elev_m + C(side) + cr(river_km, df=5) + valley_wall_found + channel_resolved + C(river_section)",
+    "model_b_pairs": 239,
+    "model_b_rhs": "d_forest + d_valley_width_m + d_wall_slope_deg + d_valley_wall_found + d_bank_slope_deg + d_outer_bend",
+    "matches_stats_step": {
+      "a_rows": true,
+      "rhs_a": true,
+      "b_stations": true
+    },
+    "model_a_pearson_above_0.7": [
+      {
+        "a": "gradient",
+        "b": "bank_elev_m",
+        "r": -0.75
+      },
+      {
+        "a": "wall_slope_deg",
+        "b": "valley_wall_found",
+        "r": 0.921
+      },
+      {
+        "a": "log10_upa",
+        "b": "bank_elev_m",
+        "r": -0.879
+      },
+      {
+        "a": "log10_upa",
+        "b": "river_km",
+        "r": 0.949
+      },
+      {
+        "a": "bank_elev_m",
+        "b": "river_km",
+        "r": -0.946
+      }
+    ],
+    "model_a_spearman_above_0.7": [
+      {
+        "a": "gradient",
+        "b": "log10_upa",
+        "r": 0.826
+      },
+      {
+        "a": "gradient",
+        "b": "bank_elev_m",
+        "r": -0.827
+      },
+      {
+        "a": "gradient",
+        "b": "river_km",
+        "r": 0.827
+      },
+      {
+        "a": "log10_upa",
+        "b": "bank_elev_m",
+        "r": -0.997
+      },
+      {
+        "a": "log10_upa",
+        "b": "river_km",
+        "r": 0.997
+      },
+      {
+        "a": "bank_elev_m",
+        "b": "river_km",
+        "r": -1.0
+      }
+    ],
+    "model_a_vif_above_5_fitted_design": [
+      {
+        "term": "C(river_section)",
+        "df": 1,
+        "vif_or_gvif": 51.24,
+        "gvif_1_2df": 7.16
+      },
+      {
+        "term": "wall_slope_deg",
+        "df": 1,
+        "vif_or_gvif": 9.11,
+        "gvif_1_2df": 3.02
+      },
+      {
+        "term": "log10_upa",
+        "df": 1,
+        "vif_or_gvif": 232.28,
+        "gvif_1_2df": 15.24
+      },
+      {
+        "term": "bank_elev_m",
+        "df": 1,
+        "vif_or_gvif": 399.85,
+        "gvif_1_2df": 20.0
+      },
+      {
+        "term": "valley_wall_found",
+        "df": 1,
+        "vif_or_gvif": 8.83,
+        "gvif_1_2df": 2.97
+      }
+    ],
+    "model_a_multi_column_terms": [
+      {
+        "term": "cr(river_km, df=5)",
+        "df": 5,
+        "vif_or_gvif": 17290.25,
+        "gvif_1_2df": 2.65
+      }
+    ],
+    "model_a_vif_above_5_named_only": [
+      {
+        "term": "wall_slope_deg",
+        "df": 1,
+        "vif_or_gvif": 10.62,
+        "gvif_1_2df": 3.26
+      },
+      {
+        "term": "log10_upa",
+        "df": 1,
+        "vif_or_gvif": 8.01,
+        "gvif_1_2df": 2.83
+      },
+      {
+        "term": "bank_elev_m",
+        "df": 1,
+        "vif_or_gvif": 8.83,
+        "gvif_1_2df": 2.97
+      },
+      {
+        "term": "valley_wall_found",
+        "df": 1,
+        "vif_or_gvif": 9.47,
+        "gvif_1_2df": 3.08
+      }
+    ],
+    "model_b_pearson_above_0.7": [
+      {
+        "a": "d_wall_slope_deg",
+        "b": "d_valley_wall_found",
+        "r": 0.959
+      }
+    ],
+    "model_b_spearman_above_0.7": [
+      {
+        "a": "d_wall_slope_deg",
+        "b": "d_valley_wall_found",
+        "r": 0.804
+      }
+    ],
+    "model_b_vif_above_5": [
+      {
+        "term": "d_wall_slope_deg",
+        "df": 1,
+        "vif_or_gvif": 14.86,
+        "gvif_1_2df": 3.86
+      },
+      {
+        "term": "d_valley_wall_found",
+        "df": 1,
+        "vif_or_gvif": 14.25,
+        "gvif_1_2df": 3.77
+      }
+    ]
+  }
+}

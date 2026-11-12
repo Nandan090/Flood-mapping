@@ -1,0 +1,14 @@
+term,df,vif_or_gvif,gvif_1_2df
+C(side),1,2.0291,1.4245
+forest_frac,1,1.5218,1.2336
+np.log(channel_width_m),1,2.0909,1.446
+gradient,1,1.5646,1.2508
+np.log(valley_width_m),1,4.0087,2.0022
+wall_slope_deg,1,2.8373,1.6844
+bank_slope_deg,1,5.2138,2.2834
+log10_upa,1,23.1309,4.8095
+outer_bend,1,1.3473,1.1607
+curvature,1,1.5617,1.2497
+bank_elev_m,1,424.746,20.6094
+"cr(river_km, df=5)",5,4017.3719,2.2929
+channel_resolved,1,1.2416,1.1143
