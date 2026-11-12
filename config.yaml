@@ -380,6 +380,24 @@ events:
       sample_drawn_on: "2026-11-12" # drawn once with sample_seed; never redrawn
       digitising_notes:
         - "Winter shadow will hide many right banks at km 25-35; skip a bank you cannot see."
+      # Part of the sample only (user decision 2026-11-12). Drawn once; never redrawn.
+      subset:
+        done_before: [52, 53, 54, 55, 59, 60, 62, 66, 68, 69, 74] # digitised before the draw (first 11 in sample order)
+        per_group: 12
+        seed: 43
+        rule: "From the sampled stations not yet done, draw at random (seed 43), in each forest group, the number needed to bring that group to 12 stations together with those done before; the groups are the sample's own (km 5-10 and 25-35)."
+        drawn_on: "2026-11-12" # drawn once with seed 43; never redrawn
+      # Corrections to validation_edges.csv before the edges step was re-run (user, 2026-11-13).
+      # The edges step copies these into provenance; the sample and subset are unchanged.
+      edge_corrections:
+        - { date: "2026-11-13", station_id: 66, change: re-placed, banks: [left],
+            reason: "the left point fell right of the re-centred channel centre and became a second right bank" }
+        - { date: "2026-11-13", station_id: 69, change: re-placed, banks: [left],
+            reason: "the left point fell right of the re-centred channel centre and became a second right bank" }
+        - { date: "2026-11-13", station_id: 263, change: removed, reason: shadow }
+        - { date: "2026-11-13", station_id: 267, change: removed, reason: trees }
+        - { date: "2026-11-13", station_id: 338, change: removed, reason: headworks reach }
+        - { date: "2026-11-13", station_id: 335, change: removed, reason: "no points were digitised" }
     placebo:
       s2_pre: { start: "2022-10-01", end: "2022-12-15" }
       s2_post: { start: "2023-10-01", end: "2023-12-15" }
