@@ -253,6 +253,14 @@ def sample_settings(event, cfg) -> dict:
             "block": block}
 
 
+def edge_date_window(event) -> dict:
+    """The event's own capture-date window for edge points, as convert_edge_gpkg keywords.
+
+    Events without one in config (melamchi2021, 14.25) keep the converter's default."""
+    window = getattr(getattr(event, "validation", None), "image_date_window", None)
+    return {} if window is None else {"date_window": (str(window.start), str(window.end))}
+
+
 def in_reaches(river_km: pd.Series, reaches) -> pd.Series:
     """True where river_km lies inside any [from, to] reach (both ends included)."""
     keep = pd.Series(False, index=river_km.index)
@@ -430,7 +438,8 @@ def import_validation_edges(event_key: str, config_path: str | Path | None = Non
     import geopandas as gpd
 
     from .config import PROJECT_ROOT, load_config
-    from .validation_kml import convert_edge_gpkg, find_edge_gpkg
+    from .validation_kml import (EDGE_CSV_NAME, convert_edge_gpkg, csv_to_edge_gpkg,
+                                 find_edge_gpkg)
 
     cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
     folder = PROJECT_ROOT / cfg.paths.data / event_key / "validation"
@@ -440,6 +449,11 @@ def import_validation_edges(event_key: str, config_path: str | Path | None = Non
     for path in (sample_path, lines_path, table_path):
         if not path.exists():
             raise FileNotFoundError(f"{path} is missing. Run the table and sample steps first.")
+    csv_path = folder / EDGE_CSV_NAME
+    if csv_path.exists():
+        # The user's CSV of edge points becomes validation_edges.gpkg, then snaps as before.
+        csv_to_edge_gpkg(csv_path, folder / "validation_edges.gpkg", cfg.crs)
+        print(f"Converted {EDGE_CSV_NAME} to validation_edges.gpkg.")
     source = find_edge_gpkg(folder)
     stations = gpd.read_file(sample_path)
     chosen = [int(s) for s in stations["station_id"].tolist()]
@@ -453,7 +467,8 @@ def import_validation_edges(event_key: str, config_path: str | Path | None = Non
     out_path = folder / "validation_edges.geojson"
     written, report = convert_edge_gpkg(
         source, lines_path, out_path, centres,
-        crs=cfg.crs, max_distance_m=float(cfg.validation_snap_max_m))
+        crs=cfg.crs, max_distance_m=float(cfg.validation_snap_max_m),
+        **edge_date_window(getattr(cfg.events, event_key)))
 
     forest_column = f"forest_frac_{int(cfg.belt_width_m)}"
     reaches = sample_settings(getattr(cfg.events, event_key), cfg)["reaches"]
@@ -473,6 +488,8 @@ def import_validation_edges(event_key: str, config_path: str | Path | None = Non
 
     print(f"Read {source.name}, layer validation_edges.")
     print(f"Points written: {report['n_written']}")
+    print(f"Points outside the capture-date window (left out): "
+          f"{report['outside_date_window']}")
     print("Points per image_date:")
     for date, n in report["points_per_image_date"].items():
         print(f"  {date}  {n}")
@@ -495,7 +512,7 @@ def import_validation_edges(event_key: str, config_path: str | Path | None = Non
         print("station_id")
         for row in far.itertuples(index=False):
             print(int(row.station_id))
-    print("Coverage of the 40 sampled stations:")
+    print(f"Coverage of the {len(chosen)} sampled stations:")
     print(f"{'station_id':>10}  {'status':<8}  forest_group")
     for row in coverage.itertuples(index=False):
         print(f"{int(row.station_id):10d}  {row.status:<8}  {row.forest_group}")

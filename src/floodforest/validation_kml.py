@@ -182,6 +182,92 @@ def find_edge_gpkg(folder: str | Path):
         f"{named} is missing, and {hidden} has no validation_edges layer.")
 
 
+EDGE_CSV_NAME = "validation_edges.csv"
+EDGE_CSV_COLUMNS = ("station_id", "side", "image_date", "confidence", "note", "edge_lat",
+                    "edge_lon")
+_FROM_CSV = {"written_from": EDGE_CSV_NAME}
+
+
+def read_edge_csv(csv_path: str | Path):
+    """The user's edge CSV as WGS84 points. Refuses a malformed file; writes nothing.
+
+    Columns: station_id, side (left/right), image_date (YYYY-MM-DD), confidence (1-3),
+    note (may be empty), edge_lat, edge_lon (decimal degrees, WGS84).
+    """
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import Point
+
+    path = Path(csv_path)
+    frame = pd.read_csv(path, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    frame.columns = [c.strip() for c in frame.columns]
+    missing = [c for c in EDGE_CSV_COLUMNS if c not in frame.columns]
+    extra = [c for c in frame.columns if c not in EDGE_CSV_COLUMNS]
+    if missing or extra:
+        raise RuntimeError(f"{path.name} must have exactly the columns "
+                           f"{', '.join(EDGE_CSV_COLUMNS)}; missing {missing}, extra {extra}.")
+    frame = frame[[any(str(v).strip() for v in row) for row in frame.itertuples(index=False)]]
+    rows, problems = [], []
+    for i, row in enumerate(frame.itertuples(index=False), start=2):   # line 1 is the header
+        label = f"line {i}"
+        try:
+            station_id = int(str(row.station_id).strip())
+        except ValueError:
+            problems.append(f"{label}: station_id {row.station_id!r} is not a whole number.")
+            continue
+        label = f"line {i} (station {station_id})"
+        side = str(row.side).strip().lower()
+        if side not in ("left", "right"):
+            problems.append(f"{label}: side {row.side!r} must be left or right.")
+            continue
+        try:
+            lat, lon = float(row.edge_lat), float(row.edge_lon)
+        except ValueError:
+            problems.append(f"{label}: edge_lat/edge_lon must be decimal degrees.")
+            continue
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            problems.append(f"{label}: edge_lat {lat} / edge_lon {lon} are not valid degrees.")
+            continue
+        try:
+            image_date = _as_iso_date(str(row.image_date).strip(), label)
+            confidence = _as_confidence(str(row.confidence).strip() or None, label)
+        except RuntimeError as exc:
+            problems.append(str(exc))
+            continue
+        rows.append({"station_id": station_id, "side": side, "image_date": image_date,
+                     "confidence": confidence, "note": str(row.note).strip(),
+                     "geometry": Point(lon, lat)})
+    keys = [(r["station_id"], r["side"]) for r in rows]
+    dupes = sorted({k for k in keys if keys.count(k) > 1})
+    problems += [f"station {s} {side} appears more than once." for s, side in dupes]
+    if problems:
+        raise RuntimeError(f"{path.name} was refused; nothing was written.\n" + "\n".join(problems))
+    if not rows:
+        raise RuntimeError(f"{path.name} has no points.")
+    return gpd.GeoDataFrame(rows, crs="EPSG:4326")
+
+
+def csv_to_edge_gpkg(csv_path: str | Path, gpkg_path: str | Path, crs: str) -> Path:
+    """Write the edge CSV as validation_edges.gpkg (layer validation_edges, in crs).
+
+    A validation_edges.gpkg that was not written from the CSV (a QGIS layer) is never
+    overwritten."""
+    import pyogrio
+
+    gpkg_path = Path(gpkg_path)
+    if gpkg_path.exists():
+        meta = pyogrio.read_info(gpkg_path, layer="validation_edges").get("layer_metadata") or {}
+        if meta.get("written_from") != EDGE_CSV_NAME:
+            raise RuntimeError(f"Both {EDGE_CSV_NAME} and a {gpkg_path.name} not written from "
+                               "it are present; keep only one. Nothing was written.")
+    points = read_edge_csv(csv_path).to_crs(crs)
+    if gpkg_path.exists():
+        gpkg_path.unlink()
+    points.to_file(gpkg_path, layer="validation_edges", driver="GPKG",
+                   layer_metadata=_FROM_CSV)
+    return gpkg_path
+
+
 def export_event_sample_kml(event_key: str, config_path: str | Path | None = None) -> Path:
     """CLI entry: sample_transects.kml beside the drawn sample. Never overwrites a KML.
 
@@ -205,12 +291,16 @@ def export_event_sample_kml(event_key: str, config_path: str | Path | None = Non
 
 def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_path: str | Path,
                       centres: dict, *, crs: str = "EPSG:32645",
-                      max_distance_m: float = SNAP_LIMIT_M) -> tuple[Path, dict]:
+                      max_distance_m: float = SNAP_LIMIT_M,
+                      date_window: tuple[str, str] = (VALIDATION_DATE_START,
+                                                      VALIDATION_DATE_END)) -> tuple[Path, dict]:
     """Snap digitised points, assign side from the re-centred channel, write GeoJSON.
 
     A point more than max_distance_m from both of its station's transect
-    lines is refused and is not written. Other points are still written.
+    lines refuses the whole conversion: nothing is written. Points whose
+    image_date is outside date_window (both ends included) are left out and counted.
     """
+    date_start, date_end = date_window
     import geopandas as gpd
     import pandas as pd
 
@@ -237,7 +327,7 @@ def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_pat
             continue
         image_date = _as_iso_date(getattr(row, "image_date", None),
                                   f"row {i + 1}", required=False)
-        if image_date is None or not VALIDATION_DATE_START <= image_date <= VALIDATION_DATE_END:
+        if image_date is None or not date_start <= image_date <= date_end:
             outside_window += 1
             continue
         try:
