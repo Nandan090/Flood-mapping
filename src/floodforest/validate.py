@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+SNAP_REPORT_M = 10.0   # snap distances above this are listed (not refused)
+
 _MONTHS = ("January", "February", "March", "April", "May", "June", "July",
            "August", "September", "October", "November", "December")
 
@@ -253,6 +255,86 @@ def sample_settings(event, cfg) -> dict:
             "block": block}
 
 
+def subset_draw(groups: pd.Series, done: list[int], per_group: int, seed: int) -> list[int]:
+    """Stations to add to those already done so every forest group reaches per_group.
+
+    groups maps each sampled station to its group. In each group, lowest first, the
+    missing number is drawn at random (seed) from the group's not-yet-done stations.
+    The result is sorted by station id (sample order)."""
+    unknown = sorted(set(done) - set(groups.index))
+    if unknown:
+        raise RuntimeError(f"Stations {unknown} are not in the validation sample.")
+    rng = np.random.default_rng(seed)
+    picked: list[int] = []
+    names = [n for n in GROUP_NAMES if n in set(groups)]
+    names += sorted(set(groups) - set(names))
+    for name in names:
+        members = sorted(int(s) for s in groups.index[groups == name])
+        have = [s for s in members if s in set(done)]
+        rest = [s for s in members if s not in set(done)]
+        need = per_group - len(have)
+        if need < 0:
+            raise RuntimeError(f"A group already has {len(have)} done stations, more than "
+                               f"{per_group}; the subset cannot balance it.")
+        if need > len(rest):
+            raise RuntimeError(f"A group has only {len(rest)} stations left, and {need} "
+                               "are needed.")
+        if need:
+            picked.extend(int(v) for v in rng.choice(rest, size=need, replace=False))
+    return sorted(picked)
+
+
+def run_validation_subset(event_key: str, config_path: str | Path | None = None) -> list[int]:
+    """Draw once, from config validation.subset, the sample stations still to digitise.
+
+    Prints only station ids, river km and the total: no forest group or value."""
+    import geopandas as gpd
+    from datetime import date
+
+    from .config import PROJECT_ROOT, load_config
+
+    cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
+    event = getattr(cfg.events, event_key)
+    sub = getattr(getattr(event, "validation", None), "subset", None)
+    if sub is None or getattr(sub, "seed", None) is None:
+        raise RuntimeError("validation.subset with a seed must be set in config first.")
+    prov_path = PROJECT_ROOT / cfg.paths.outputs / event_key / "provenance.json"
+    provenance = json.loads(prov_path.read_text(encoding="utf-8"))
+    if "validation_subset" in provenance or getattr(sub, "drawn_on", None):
+        raise RuntimeError(f"The {event_key} validation subset was already drawn. It is never "
+                           "redrawn; nothing was written.")
+    folder = PROJECT_ROOT / cfg.paths.data / event_key / "validation"
+    stations = gpd.read_file(folder / "sample_stations.geojson")
+    chosen = sorted(int(s) for s in stations.station_id)
+    if chosen != sorted(provenance["validation_sample"]["station_ids"]):
+        raise RuntimeError("sample_stations.geojson does not match the recorded sample.")
+    table = pd.read_csv(PROJECT_ROOT / cfg.paths.outputs / event_key / "transects.csv")
+    reaches = sample_settings(event, cfg)["reaches"]
+    pool = table[in_reaches(table["river_km"], reaches)] if reaches else table
+    groups = station_group_labels(eligible_station_forest(
+        pool, f"forest_frac_{int(cfg.belt_width_m)}"), chosen, int(cfg.validation_terciles))
+    done = [int(s) for s in sub.done_before]
+    picked = subset_draw(groups, done, int(sub.per_group), int(sub.seed))
+    km = stations.set_index("station_id")["river_km"]
+    provenance["validation_subset"] = {
+        "seed": int(sub.seed),
+        "drawn_on": date.today().isoformat(),
+        "rule": str(sub.rule),
+        "per_group": int(sub.per_group),
+        "done_before": done,
+        "to_do": picked,
+        "total_done_after": len(done) + len(picked),
+        "never_redrawn": True,
+    }
+    prov_path.write_text(json.dumps(provenance, indent=2), encoding="utf-8")
+    print(f"Stations to digitise ({len(picked)}), in sample order:")
+    print(f"{'station_id':>10}  {'river_km':>8}")
+    for s in picked:
+        print(f"{s:10d}  {float(km[s]):8.2f}")
+    print(f"Done before: {len(done)}; to do: {len(picked)}; total: {len(done) + len(picked)}")
+    return picked
+
+
 def edge_date_window(event) -> dict:
     """The event's own capture-date window for edge points, as convert_edge_gpkg keywords.
 
@@ -433,6 +515,26 @@ def far_from_channel(table: pd.DataFrame, station_ids: list[int], limit_m: float
     return far[["station_id", "river_km"]].sort_values("station_id").reset_index(drop=True)
 
 
+def edge_rerun_record(event, earlier: dict | None) -> dict:
+    """Provenance fields for a re-run of the edges step: the corrections from config and the
+    earlier runs' records, oldest first. Empty for a first run with no corrections."""
+    from datetime import date
+
+    validation = getattr(event, "validation", None)
+    corrections = [vars(c) | ({"banks": list(c.banks)} if hasattr(c, "banks") else {})
+                   for c in (getattr(validation, "edge_corrections", None) or [])]
+    out = {"run_on": date.today().isoformat()}
+    if corrections:
+        out["rerun_after_corrections"] = {
+            "corrected_on": max(str(c["date"]) for c in corrections),
+            "corrections": corrections,
+        }
+    if earlier:
+        earlier = dict(earlier)
+        out["earlier_runs"] = earlier.pop("earlier_runs", []) + [earlier]
+    return out
+
+
 def import_validation_edges(event_key: str, config_path: str | Path | None = None) -> list[Path]:
     """Convert the digitised GPKG, write GeoJSON, and print coverage. No comparison."""
     import geopandas as gpd
@@ -506,6 +608,10 @@ def import_validation_edges(event_key: str, config_path: str | Path | None = Non
         for item in report["mismatches"]:
             print(f"{item['station_id']:10d}  {item['recorded']:<8}  {item['derived']:<8}  "
                   f"{item['line']}")
+    far_snaps = [s for s in report["snap_distances"] if s["snap_m"] > SNAP_REPORT_M]
+    print(f"Points snapped more than {SNAP_REPORT_M:g} m: {len(far_snaps)}")
+    for item in far_snaps:
+        print(f"  station {item['station_id']} {item['side']}  {item['snap_m']:.1f} m")
     print(f"Sampled stations more than {cfg.validation_channel_offset_warn_m:g} m "
           f"from the re-centred channel: {len(far)}")
     if len(far):
@@ -529,11 +635,15 @@ def import_validation_edges(event_key: str, config_path: str | Path | None = Non
 
     prov_path = PROJECT_ROOT / cfg.paths.outputs / event_key / "provenance.json"
     provenance = json.loads(prov_path.read_text(encoding="utf-8"))
-    provenance["validation_edges"] = {
+    earlier = provenance.get("validation_edges")
+    record = {
         "source": str(source.relative_to(PROJECT_ROOT)).replace("\\", "/"),
         "n_written": report["n_written"],
         "points_per_image_date": {str(k): int(v) for k, v in report["points_per_image_date"].items()},
         "n_refused": len(report["refused"]),
+        "snap_m_max": round(max(s["snap_m"] for s in report["snap_distances"]), 2),
+        f"snapped_over_{SNAP_REPORT_M:g}_m": [
+            {**s, "snap_m": round(s["snap_m"], 2)} for s in far_snaps],
         "n_side_mismatches": len(report["mismatches"]),
         "side_mismatches": report["mismatches"],
         "n_far_from_channel": int(len(far)),
@@ -553,6 +663,8 @@ def import_validation_edges(event_key: str, config_path: str | Path | None = Non
             str(coverage_path.relative_to(PROJECT_ROOT)).replace("\\", "/"),
         ],
     }
+    record.update(edge_rerun_record(getattr(cfg.events, event_key), earlier))
+    provenance["validation_edges"] = record
     prov_path.write_text(json.dumps(provenance, indent=2), encoding="utf-8")
     return [written, coverage_path]
 

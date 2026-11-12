@@ -191,7 +191,8 @@ _FROM_CSV = {"written_from": EDGE_CSV_NAME}
 def read_edge_csv(csv_path: str | Path):
     """The user's edge CSV as WGS84 points. Refuses a malformed file; writes nothing.
 
-    Columns: station_id, side (left/right), image_date (YYYY-MM-DD), confidence (1-3),
+    Columns: station_id, side (left/right), image_date (YYYY-MM-DD, or month/day/year
+    such as 1/2/2026 for 2 January 2026; written out as YYYY-MM-DD), confidence (1-3),
     note (may be empty), edge_lat, edge_lon (decimal degrees, WGS84).
     """
     import geopandas as gpd
@@ -229,7 +230,7 @@ def read_edge_csv(csv_path: str | Path):
             problems.append(f"{label}: edge_lat {lat} / edge_lon {lon} are not valid degrees.")
             continue
         try:
-            image_date = _as_iso_date(str(row.image_date).strip(), label)
+            image_date = _csv_date(str(row.image_date).strip(), label)
             confidence = _as_confidence(str(row.confidence).strip() or None, label)
         except RuntimeError as exc:
             problems.append(str(exc))
@@ -320,6 +321,7 @@ def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_pat
     rows = []
     refused = []
     mismatches = []
+    snaps = []
     outside_window = 0
     for i, row in enumerate(raw.itertuples(index=False)):
         geom = getattr(row, "geometry", None)
@@ -369,6 +371,7 @@ def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_pat
             "note": note,
             "geometry": snapped,
         })
+        snaps.append({"station_id": station_id, "side": derived, "snap_m": float(gap_m)})
     if refused:
         raise RuntimeError("Conversion refused; no GeoJSON was written.\n" + "\n".join(refused))
     if not rows:
@@ -386,6 +389,7 @@ def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_pat
         "refused": refused,
         "outside_date_window": outside_window,
         "mismatches": mismatches,
+        "snap_distances": sorted(snaps, key=lambda s: (s["station_id"], s["side"])),
         "points_per_image_date": out["image_date"].value_counts().sort_index().to_dict(),
         "stations_written": sorted(int(s) for s in out["station_id"].unique()),
     }
@@ -406,6 +410,19 @@ def _as_iso_date(value, label: str, required: bool = True) -> str | None:
         return datetime.strptime(text[:10], "%Y-%m-%d").date().isoformat()
     except ValueError:
         raise RuntimeError(f"{label} has date {value!r}. Use a date like 2021-10-15.") from None
+
+
+def _csv_date(text: str, label: str) -> str:
+    """A CSV image_date as YYYY-MM-DD. Accepts YYYY-MM-DD or month/day/year (M/D/YYYY)."""
+    if not text:
+        raise RuntimeError(f"{label} is missing image_date.")
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            pass
+    raise RuntimeError(f"{label} has date {text!r}. Use a date like 2021-10-15 or "
+                       "month/day/year like 10/15/2021.")
 
 
 def _as_confidence(value, label: str) -> int:

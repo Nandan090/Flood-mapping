@@ -55,7 +55,8 @@ def test_a_good_csv_is_read_as_wgs84_points(tmp_path):
     ("7,up,2025-10-03,1,,27.9,85.3", "must be left or right"),
     ("7,left,2025-10-03,4,,27.9,85.3", "confidence"),
     ("7,left,,1,,27.9,85.3", "missing image_date"),
-    ("7,left,03/10/2025,1,,27.9,85.3", "Use a date like"),
+    ("7,left,15/10/2025,1,,27.9,85.3", "Use a date like"),   # day/month is not month/day
+    ("7,left,Oct 3 2025,1,,27.9,85.3", "Use a date like"),
     ("7,left,2025-10-03,1,,north,85.3", "decimal degrees"),
     ("seven,left,2025-10-03,1,,27.9,85.3", "not a whole number"),
 ])
@@ -132,3 +133,48 @@ def test_each_event_uses_its_own_capture_date_window():
     events = load_config().events
     assert edge_date_window(events.lende2025) == {"date_window": ("2025-07-09", "2026-05-31")}
     assert edge_date_window(events.melamchi2021) == {}    # converter default, 2021-08-01..2022-05-31
+
+def test_month_day_year_dates_are_read_and_written_as_iso(tmp_path):
+    path = _csv(tmp_path,
+                f"7,left,1/2/2026,1,,{_latlon(500000.0, 3100050.0)}",
+                f"7,right,11/29/2025,1,,{_latlon(500000.0, 3099960.0)}")
+    assert read_edge_csv(path).image_date.tolist() == ["2026-01-02", "2025-11-29"]
+    out, _ = _convert(tmp_path, path)
+    assert sorted(gpd.read_file(out).image_date.astype(str)) == ["2025-11-29", "2026-01-02"]
+
+
+def test_each_snap_distance_is_reported(tmp_path):
+    csv = _csv(tmp_path,
+               f"7,left,2025-10-03,1,,{_latlon(500005.0, 3100050.0)}",
+               f"7,right,2025-10-03,1,,{_latlon(499988.0, 3099960.0)}")
+    _, report = _convert(tmp_path, csv)
+    snaps = {s["side"]: s["snap_m"] for s in report["snap_distances"]}
+    assert snaps["left"] == pytest.approx(5.0, abs=0.05)
+    assert snaps["right"] == pytest.approx(12.0, abs=0.05)
+
+def test_a_rerun_records_the_corrections_and_keeps_the_earlier_run():
+    from types import SimpleNamespace
+
+    from floodforest.validate import edge_rerun_record
+
+    fix = [SimpleNamespace(date="2026-11-13", station_id=66, change="re-placed", banks=["left"],
+                           reason="r"),
+           SimpleNamespace(date="2026-11-13", station_id=263, change="removed", reason="shadow")]
+    event = SimpleNamespace(validation=SimpleNamespace(edge_corrections=fix))
+    first = {"n_written": 68}
+    record = edge_rerun_record(event, first)
+    assert record["rerun_after_corrections"]["corrected_on"] == "2026-11-13"
+    assert [c["station_id"] for c in record["rerun_after_corrections"]["corrections"]] == [66, 263]
+    assert record["earlier_runs"] == [first]
+    again = edge_rerun_record(event, {**record, "n_written": 63})
+    assert [r["n_written"] for r in again["earlier_runs"]] == [68, 63]
+    plain = edge_rerun_record(SimpleNamespace(validation=SimpleNamespace()), None)
+    assert set(plain) == {"run_on"}
+
+
+
+def test_lende_edge_corrections_as_given():
+    fixes = load_config().events.lende2025.validation.edge_corrections
+    assert {(c.station_id, c.change) for c in fixes} == {
+        (66, "re-placed"), (69, "re-placed"), (263, "removed"), (267, "removed"),
+        (338, "removed"), (335, "removed")}

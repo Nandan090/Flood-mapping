@@ -228,6 +228,15 @@ def test_detached_columns_keep_the_requested_signs():
     assert by_id.loc[1, "diff_m"] == pytest.approx(-10.0)
 
 
+def test_compare_refuses_a_station_with_two_points_on_one_bank():
+    import pandas.errors
+
+    edges, lines, table, coverage = _comparison_fixture()
+    twice = pd.concat([edges, edges[edges.station_id == 1]], ignore_index=True)
+    with pytest.raises(pandas.errors.MergeError, match="not unique in left dataset"):
+        prepare_validation_comparison(twice, lines, table, coverage)
+
+
 def _cutoff_frame():
     return pd.DataFrame({
         "forest_group": ["Low"] * 4 + ["Mid"] * 2 + ["High"] * 4,
