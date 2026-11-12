@@ -371,6 +371,15 @@ events:
       must_end_before: "2026-08-26"
       imagery_source: Google Earth Pro historical imagery
       excluded_sources: [Sentinel-2]
+      # Blind sample (14.13), decided by the user 2026-11-12. Drawn once; never redrawn.
+      # Forest groups are formed from the stations inside these reaches only (km 0-5 is
+      # left out because of the 30 July 2025 Timure flood; km 10-25 is the gorge).
+      sample_size: 50
+      sample_reaches_km: [[5, 10], [25, 35]]
+      sample_seed: 42
+      sample_drawn_on: "2026-11-12" # drawn once with sample_seed; never redrawn
+      digitising_notes:
+        - "Winter shadow will hide many right banks at km 25-35; skip a bank you cannot see."
     placebo:
       s2_pre: { start: "2022-10-01", end: "2022-12-15" }
       s2_post: { start: "2023-10-01", end: "2023-12-15" }
