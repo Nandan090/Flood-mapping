@@ -400,6 +400,9 @@ events:
         - { date: "2026-11-13", station_id: 335, change: removed, reason: "no points were digitised" }
         - { date: "2026-11-13", station_id: 66, change: removed, banks: [left, right],
             reason: "bank side ambiguous: the visible channel was offset about 20 m from the pre-event channel centre the side rule uses, so a left point fell on the right bank" }
+      # Notes added to the validation report (user, 2026-11-13).
+      report_notes:
+        - "Stations 249, 251, 252 and 253 (river km 25.0 to 25.4) lie within about 340 m of each other and count as one cluster (they are in the same 3 km block)."
     placebo:
       s2_pre: { start: "2022-10-01", end: "2022-12-15" }
       s2_post: { start: "2023-10-01", end: "2023-12-15" }
