@@ -983,6 +983,9 @@ def load_validation_review(review: pd.DataFrame, points: pd.DataFrame) -> pd.Dat
 def review_scope_limitation(points: pd.DataFrame, under_detect_m: float) -> str:
     """The limitation sentence on which points were reviewed; refuses if it is untrue."""
     reviewed = points[points.review_status != "not reviewed"]
+    if reviewed.empty:
+        return (f"No points have been reviewed against pre-event imagery yet; the second pass "
+                f"(points with an error above {under_detect_m:g} m) is still to be done.")
     errors = reviewed.diff_m.abs()
     if errors.isna().any() or (errors <= under_detect_m).any():
         raise RuntimeError(
@@ -1159,6 +1162,56 @@ def _write_validation_plot(points: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
+def comparison_date_window(event) -> tuple[str, str]:
+    """The capture-date window compare checks: the event's own, else 14.25's (melamchi2021)."""
+    from .validation_kml import VALIDATION_DATE_END, VALIDATION_DATE_START
+
+    return edge_date_window(event).get("date_window", (VALIDATION_DATE_START, VALIDATION_DATE_END))
+
+
+def check_point_dates(points: pd.DataFrame, window: tuple[str, str]) -> None:
+    """Refuse the comparison if any point's image_date is missing or outside the window."""
+    dates = pd.to_datetime(points.image_date, errors="coerce")
+    if dates.isna().any() or (dates < window[0]).any() or (dates > window[1]).any():
+        raise RuntimeError("Validation points violate the existing 14.25 capture-date window "
+                           f"({window[0]} to {window[1]}).")
+
+
+def write_review_template(points: pd.DataFrame, path: Path) -> bool:
+    """First pass: write validation_review.csv with every point 'not reviewed'.
+
+    An existing review file is never overwritten; returns whether one was written."""
+    path = Path(path)
+    if path.exists():
+        return False
+    keys = points[["station_id", "side"]].astype({"station_id": int})
+    keys = keys.sort_values(["station_id", "side"]).assign(status="not reviewed", note="")
+    keys.to_csv(path, index=False)
+    return True
+
+
+def subset_coverage_note(coverage: pd.DataFrame, subset: dict | None) -> str:
+    """Low-forest coverage line for an event digitised from part of its sample.
+
+    Stations outside the drawn subset were never assigned, so they are counted apart from
+    assigned stations that were skipped or removed."""
+    low = coverage[coverage.forest_group.astype(str).str.lower() == "low"]
+    skipped = low[low.status.astype(str).str.lower() == "skipped"]
+    reasons = ("Reasons for stations removed after digitising are recorded in provenance "
+               "(validation_edges).")
+    if not subset:
+        return (f"- Low-forest coverage: {len(skipped)} of {len(low)} sampled stations were "
+                f"skipped. {reasons}")
+    assigned = {int(s) for s in subset["done_before"]} | {int(s) for s in subset["to_do"]}
+    low_assigned = low[low.station_id.astype(int).isin(assigned)]
+    skipped_assigned = skipped[skipped.station_id.astype(int).isin(assigned)]
+    return (f"- Low-forest coverage: {len(low_assigned)} of {len(low)} sampled low-forest "
+            f"stations were assigned in the subset drawn on {subset['drawn_on']} (seed "
+            f"{subset['seed']}); {len(skipped_assigned)} of those "
+            f"{'was' if len(skipped_assigned) == 1 else 'were'} skipped or removed. "
+            f"{reasons}")
+
+
 def run_validation_comparison(event_key: str = "melamchi2021",
                               config_path: str | Path | None = None) -> list[Path]:
     """Compare hand-digitised reach points with the primary table outcome."""
@@ -1167,15 +1220,17 @@ def run_validation_comparison(event_key: str = "melamchi2021",
     from .config import PROJECT_ROOT, load_config
 
     cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
-    if event_key != "melamchi2021":
-        raise RuntimeError("Independent validation edges are configured for melamchi2021 only.")
+    event = getattr(cfg.events, event_key, None)
+    is_melamchi = event_key == "melamchi2021"   # its settings are 14.25's, not in config
+    if event is None or (not is_melamchi and getattr(event, "validation", None) is None):
+        raise RuntimeError(f"{event_key} has no validation block in config.")
     validation_dir = PROJECT_ROOT / cfg.paths.data / event_key / "validation"
     edges_path = validation_dir / "validation_edges.geojson"
     lines_path = validation_dir / "sample_transects.gpkg"
     coverage_path = validation_dir / "sample_coverage.csv"
     table_path = PROJECT_ROOT / cfg.paths.outputs / event_key / "transects.csv"
     review_path = validation_dir / "validation_review.csv"
-    required = (edges_path, lines_path, coverage_path, table_path, review_path)
+    required = (edges_path, lines_path, coverage_path, table_path)
     missing = [str(path) for path in required if not path.exists()]
     if missing:
         raise FileNotFoundError(f"Validation comparison inputs are missing: {missing}.")
@@ -1191,10 +1246,9 @@ def run_validation_comparison(event_key: str = "melamchi2021",
         snap_max_m=float(cfg.validation_snap_max_m))
     if len(points) != len(edges):
         raise RuntimeError("Comparison did not retain exactly one row per validation point.")
-    point_dates = pd.to_datetime(points.image_date, errors="coerce")
-    if point_dates.isna().any() or (point_dates < "2021-08-01").any() \
-            or (point_dates > "2022-05-31").any():
-        raise RuntimeError("Validation points violate the existing 14.25 capture-date window.")
+    check_point_dates(points, comparison_date_window(event))
+    if write_review_template(points, review_path):
+        print(f"Wrote {review_path.name} with every point 'not reviewed' (first pass).")
     points = load_validation_review(pd.read_csv(review_path, dtype={"note": str}), points)
 
     from . import optical
@@ -1459,16 +1513,25 @@ def run_validation_comparison(event_key: str = "melamchi2021",
         "say to skip when cloud, shadow, or trees hide the edge, so the imagery protocol is clear "
         "but the cause for each skipped station cannot be determined from the saved data."
     )
+    if not is_melamchi:
+        prov_path = PROJECT_ROOT / cfg.paths.outputs / event_key / "provenance.json"
+        provenance = json.loads(prov_path.read_text(encoding="utf-8"))
+        low_skip_note = subset_coverage_note(coverage, provenance.get("validation_subset"))
     limitations_text = "\n".join([
         "# Validation limitations",
         "",
         low_skip_note,
-        "- Station 328 is retained and flagged as `braided reach, far from main channel`; its "
-        "original note about the imagery dot being a couple of metres off is preserved.",
-        f"- The {len(points)} validation points were hand-marked from Esri Wayback imagery. "
-        f"The recorded capture dates are {', '.join(sorted(points.image_date.astype(str).unique()))}; "
-        "the Wayback release is 2024-11-18.",
-        f"- The points cover {unique_stations} stations from the 40-station sample. "
+        *(["- Station 328 is retained and flagged as `braided reach, far from main channel`; its "
+           "original note about the imagery dot being a couple of metres off is preserved."]
+          if is_melamchi else []),
+        (f"- The {len(points)} validation points were hand-marked from Esri Wayback imagery. "
+         f"The recorded capture dates are {', '.join(sorted(points.image_date.astype(str).unique()))}; "
+         "the Wayback release is 2024-11-18." if is_melamchi else
+         f"- The {len(points)} validation points were hand-marked from "
+         f"{event.validation.imagery_source}. The recorded capture dates are "
+         f"{', '.join(sorted(points.image_date.astype(str).unique()))}."),
+        f"- The points cover {unique_stations} stations from the "
+        f"{40 if is_melamchi else len(coverage)}-station sample. "
         f"The wild-bootstrap analysis has {int(main.block_id.nunique())} blocks among its "
         "eligible points; intervals are labelled approximate because the validation sample is small.",
         "- This is a transect-distance comparison against the primary combined-label/FABDEM "
@@ -1537,9 +1600,9 @@ def run_validation_comparison(event_key: str = "melamchi2021",
         "",
         *largest_error_lines,
         "",
-        "Station 328 is kept in every main summary and flagged descriptively as `braided reach, "
-        "far from main channel`; the sensitivity run below repeats the summary without it.",
-        "",
+        *(["Station 328 is kept in every main summary and flagged descriptively as `braided "
+           "reach, far from main channel`; the sensitivity run below repeats the summary "
+           "without it.", ""] if is_melamchi else []),
         "### Exclusions",
         "",
         f"Excluded from main numbers ({len(excluded)} point rows). A row with several "
@@ -1551,7 +1614,7 @@ def run_validation_comparison(event_key: str = "melamchi2021",
         "",
         "| Sensitivity | n | Mean diff (m) | MAE (m) | Under-detected | OLS slope | Spearman rho |",
         "|---|---:|---:|---:|---:|---:|---:|",
-        *sensitivity_text,
+        *(sensitivity_text if is_melamchi else sensitivity_text[:2]),
         "",
         "### Detached reach sensitivity (not part of the main summary)",
         "",

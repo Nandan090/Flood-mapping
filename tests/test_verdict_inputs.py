@@ -91,7 +91,12 @@ def test_melamchi_still_reads_the_shared_results_files():
     ok, note, validated = _validation_inputs(cfg, "melamchi2021")
     assert note.startswith("under-detected High 26.7% vs Low 10.0%")
     assert validated is True
-    assert _validation_inputs(cfg, "lende2025") == (S.NOT_RUN,) * 3
+    # lende2025 reads only its own folder: not yet run, or its own numbers, never Melamchi's.
+    lende = _validation_inputs(cfg, "lende2025")
+    if (PROJECT_ROOT / "results" / "lende2025" / "validation_summary.csv").exists():
+        assert lende[1] != note
+    else:
+        assert lende == (S.NOT_RUN,) * 3
 
 
 def test_pending_note_in_the_report():

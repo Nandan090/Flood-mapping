@@ -237,6 +237,56 @@ def test_compare_refuses_a_station_with_two_points_on_one_bank():
         prepare_validation_comparison(twice, lines, table, coverage)
 
 
+def test_compare_checks_each_event_against_its_own_date_window():
+    from floodforest.config import load_config
+    from floodforest.validate import check_point_dates, comparison_date_window
+
+    events = load_config().events
+    assert comparison_date_window(events.melamchi2021) == ("2021-08-01", "2022-05-31")
+    lende = comparison_date_window(events.lende2025)
+    assert lende == ("2025-07-09", "2026-05-31")
+    check_point_dates(pd.DataFrame({"image_date": ["2025-11-29", "2026-01-20"]}), lende)
+    with pytest.raises(RuntimeError, match="capture-date window"):
+        check_point_dates(pd.DataFrame({"image_date": ["2025-07-08"]}), lende)
+
+
+def test_first_pass_review_file_marks_every_point_not_reviewed_and_is_never_overwritten(
+        tmp_path):
+    from floodforest.validate import load_validation_review, write_review_template
+
+    points = pd.DataFrame({"station_id": [5, 2, 2], "side": ["left", "right", "left"]})
+    path = tmp_path / "validation_review.csv"
+    assert write_review_template(points, path)
+    review = pd.read_csv(path, dtype={"note": str})
+    assert review[["station_id", "side"]].values.tolist() == [[2, "left"], [2, "right"],
+                                                               [5, "left"]]
+    assert set(review.status) == {"not reviewed"}
+    assert len(load_validation_review(review, points)) == 3
+    path.write_text("station_id,side,status,note" + chr(10) + "2,left,visible change,x" + chr(10),
+                    encoding="utf-8")
+    assert not write_review_template(points, path)
+    assert "visible change" in path.read_text(encoding="utf-8")
+
+
+def test_no_reviewed_points_says_the_second_pass_is_still_to_do():
+    from floodforest.validate import review_scope_limitation
+
+    points = pd.DataFrame({"review_status": ["not reviewed"] * 2, "diff_m": [-30.0, 5.0]})
+    assert "still to be done" in review_scope_limitation(points, 20.0)
+
+
+def test_subset_coverage_counts_unassigned_stations_apart():
+    from floodforest.validate import subset_coverage_note
+
+    coverage = pd.DataFrame({"station_id": [1, 2, 3, 4, 5],
+                             "status": ["checked", "skipped", "skipped", "skipped", "checked"],
+                             "forest_group": ["low", "low", "low", "low", "high"]})
+    subset = {"done_before": [1], "to_do": [2, 5], "drawn_on": "2026-11-12", "seed": 43}
+    note = subset_coverage_note(coverage, subset)
+    assert "2 of 4 sampled low-forest stations were assigned" in note
+    assert "1 of those was skipped or removed" in note
+
+
 def _cutoff_frame():
     return pd.DataFrame({
         "forest_group": ["Low"] * 4 + ["Mid"] * 2 + ["High"] * 4,
