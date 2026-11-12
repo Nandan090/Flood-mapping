@@ -23,8 +23,11 @@ _EDGE_COLUMNS = ("station_id", "side", "image_date", "wayback_release", "confide
 
 
 def export_sample_kml(gpkg_path: str | Path, kml_path: str | Path,
-                      document_name: str = "sample transects") -> Path:
-    """Write both sample layers to one KML. Each line is named station_id_side."""
+                      document_name: str = "sample transects",
+                      station_name: str = "station_{}") -> Path:
+    """Write both sample layers to one KML. Each line is named station_id_side.
+
+    station_name formats the station points' names from the station_id."""
     import geopandas as gpd
 
     gpkg_path = Path(gpkg_path)
@@ -43,7 +46,7 @@ def export_sample_kml(gpkg_path: str | Path, kml_path: str | Path,
         line_marks.append(_placemark(name, style, _line_body(row.geometry)))
     point_marks = []
     for row in stations.sort_values("station_id").itertuples(index=False):
-        name = f"station_{int(row.station_id)}"
+        name = station_name.format(int(row.station_id))
         point_marks.append(_placemark(name, "station", _point_body(row.geometry)))
 
     kml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -177,6 +180,27 @@ def find_edge_gpkg(folder: str | Path):
             return hidden
     raise FileNotFoundError(
         f"{named} is missing, and {hidden} has no validation_edges layer.")
+
+
+def export_event_sample_kml(event_key: str, config_path: str | Path | None = None) -> Path:
+    """CLI entry: sample_transects.kml beside the drawn sample. Never overwrites a KML.
+
+    Station points are named by station_id, lines station_id_side. Only names and
+    geometry are written (no forest or outcome values)."""
+    from .config import PROJECT_ROOT, load_config
+
+    cfg = load_config(config_path or PROJECT_ROOT / "config.yaml")
+    folder = PROJECT_ROOT / cfg.paths.data / event_key / "validation"
+    gpkg = folder / "sample_transects.gpkg"
+    if not gpkg.exists():
+        raise FileNotFoundError(f"{gpkg} is missing. Draw the validation sample first.")
+    kml = folder / "sample_transects.kml"
+    if kml.exists():
+        raise RuntimeError(f"{kml} already exists; it is not overwritten.")
+    export_sample_kml(gpkg, kml, document_name=f"{event_key} validation sample",
+                      station_name="{}")
+    print(kml.relative_to(PROJECT_ROOT))
+    return kml
 
 
 def convert_edge_gpkg(gpkg_path: str | Path, transects_gpkg: str | Path, out_path: str | Path,

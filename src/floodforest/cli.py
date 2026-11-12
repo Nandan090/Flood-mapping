@@ -11,7 +11,7 @@ import argparse
 
 STEPS = ["fetch", "label", "transects", "profiles", "table", "stats",
          "validate", "placebo", "report", "all", "qa_centerline", "dw_gap_check",
-         "edges", "compare", "river_checks"]
+         "edges", "compare", "river_checks", "sample_kml"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -88,6 +88,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.step == "validate":
         from .validate import run_validation_sample
         run_validation_sample(args.event)
+        return 0
+    if args.step == "sample_kml":
+        from .validation_kml import export_event_sample_kml
+        export_event_sample_kml(args.event)
         return 0
     if args.step == "edges":
         if args.kml:
