@@ -398,6 +398,8 @@ events:
         - { date: "2026-11-13", station_id: 267, change: removed, reason: trees }
         - { date: "2026-11-13", station_id: 338, change: removed, reason: headworks reach }
         - { date: "2026-11-13", station_id: 335, change: removed, reason: "no points were digitised" }
+        - { date: "2026-11-13", station_id: 66, change: removed, banks: [left, right],
+            reason: "bank side ambiguous: the visible channel was offset about 20 m from the pre-event channel centre the side rule uses, so a left point fell on the right bank" }
     placebo:
       s2_pre: { start: "2022-10-01", end: "2022-12-15" }
       s2_post: { start: "2023-10-01", end: "2023-12-15" }
