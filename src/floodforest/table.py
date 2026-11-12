@@ -220,7 +220,7 @@ def run_table(event_key: str, config_path: str | Path | None = None) -> list[Pat
             df[f"{name}_wins_{dem}"] = out
 
     written = _write_outputs(df, outcomes, cfg, event_key)
-    _print_report(df, outcomes, cfg)
+    _print_report(df, outcomes, cfg, event, provenance["worldcover_exported"]["year"])
 
     pngs = figures.example_cross_sections(df, layers, forest, grid, cfg, event_key)
     provenance["table"] = {
@@ -235,8 +235,9 @@ def run_table(event_key: str, config_path: str | Path | None = None) -> list[Pat
         "forest_fallback": (f"WorldCover {provenance['worldcover_exported']['id']} class "
                             f"{cfg.worldcover_forest_class} replaces the Dynamic World trees test "
                             "where Dynamic World has no observation in the S2 pre window, with "
-                            "the same canopy height and Hansen conditions (14.23 a). See "
-                            "dynamic_world_gap_check for the tile's image dates."),
+                            "the same canopy height and Hansen conditions (14.23 a)."
+                            + (" See dynamic_world_gap_check for the tile's image dates."
+                               if hasattr(event, "dynamic_world_gap_check") else "")),
         "valley_wall_censoring": "only when the reach edge is within one sample (10 m) of "
                                  "the valley wall; the walk stops at the wall (14.23 b)",
         "run_start": (f"beyond the bank top: any impacted sample within "
@@ -327,7 +328,29 @@ def _has(value: str, reason: str) -> bool:
     return reason in (value or "").split(",")
 
 
-def _print_report(df, outcomes, cfg) -> None:
+def worldcover_heading(event, df, source: str, worldcover_year) -> str:
+    """Heading for the list of river km whose forest test used WorldCover (14.23 a).
+
+    An event with dynamic_world_gap_check (melamchi2021) had no Dynamic World image
+    for one tile in the window, and keeps that wording. Otherwise Dynamic World only
+    had gaps, and the heading gives their counts and km range.
+    """
+    check = getattr(event, "dynamic_world_gap_check", None)
+    if check is not None:
+        return (f"River km using WorldCover (no Dynamic World image for Sentinel-2 tile "
+                f"{check.tile} in the pre window):")
+    full = df[df[source] == "worldcover"]
+    part = df[df[source] == "mixed"]
+    both = df[df[source].isin(["worldcover", "mixed"])]
+    if both.empty:
+        return "River km using WorldCover: none (Dynamic World covered every belt pixel):"
+    return (f"River km using WorldCover: Dynamic World had small gaps near the line in the "
+            f"pre window, and WorldCover {worldcover_year} stood in there "
+            f"({len(full)} rows fully and {len(part)} rows partly, of {len(df)}; "
+            f"km {both.river_km.min():.2f}–{both.river_km.max():.2f}):")
+
+
+def _print_report(df, outcomes, cfg, event=None, worldcover_year=None) -> None:
     analysis = df[df["analysis_set"] == 1]
     print("Rows by reason code. A row with more than one reason is counted in each.")
     print(f"{'reason':<24}{'left':>8}{'right':>8}{'total':>8}")
@@ -347,8 +370,7 @@ def _print_report(df, outcomes, cfg) -> None:
         print(f"{kind:<24}{int((df[source] == kind).sum()):10d}"
               f"{int((analysis[source] == kind).sum()):14d}")
     uses_wc = df[df[source].isin(["worldcover", "mixed"])]
-    print("River km using WorldCover (no Dynamic World image for Sentinel-2 tile T45RUM "
-          "in the pre window):")
+    print(worldcover_heading(event, df, source, worldcover_year))
     for side in ("left", "right"):
         km = np.sort(uses_wc.loc[uses_wc.side == side, "river_km"].to_numpy())
         print(f"  {side}: {_km_ranges(km, cfg.station_spacing_m)}")
